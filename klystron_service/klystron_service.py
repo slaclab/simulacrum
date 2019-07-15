@@ -16,7 +16,7 @@ class KlystronPV(PVGroup):
     pdes = pvproperty(value=0.0, name=':PDES')  
     phas = pvproperty(value=0.0, name=':PHAS')
     enld = pvproperty(value=0.0, name=':ENLD')
-    poly = pvproperty(value=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), name=':POLY')
+    #poly = pvproperty(value=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), name=':POLY')
     ades = pvproperty(value=0.0, name=':ADES')
     bvjt = pvproperty(value=0.0, name=':BVJT')
     mkbvftpjasigma = pvproperty(value=0.0, name=':MKBVFTPJASIGMA')
