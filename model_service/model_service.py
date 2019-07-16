@@ -21,7 +21,7 @@ class ModelService:
         self.tao.init("-noplot -lat {lat_path} -init {init_path}".format(lat_path=path_to_lattice, init_path=path_to_init))
         self.ctx = Context.instance()
         self.model_broadcast_socket = zmq.Context().socket(zmq.PUB)
-        self.model_broadcast_socket.bind("tcp://*:{}".format(os.environ.get('MODEL_BROADCAST_PORT', 66666)))
+        self.model_broadcast_socket.bind("tcp://*:{}".format(os.environ.get('MODEL_BROADCAST_PORT', 12412)))
 
     def start(self):
         L.info("Starting Model Service.")
@@ -126,7 +126,7 @@ class ModelService:
     
     async def recv(self):
         s = self.ctx.socket(zmq.REP)
-        s.bind("tcp://*:{}".format(os.environ.get('MODEL_PORT', "12312")))
+        s.bind("tcp://*:{}".format(os.environ.get('MODEL_PORT', "12412")))
         while True:
             p = await s.recv_pyobj()
             msg = "Got a message: {}".format(p)

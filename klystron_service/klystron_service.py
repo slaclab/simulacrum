@@ -16,7 +16,7 @@ class KlystronPV(PVGroup):
     pdes = pvproperty(value=0.0, name=':PDES')  
     phas = pvproperty(value=0.0, name=':PHAS')
     enld = pvproperty(value=0.0, name=':ENLD')
-    #poly = pvproperty(value=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), name=':POLY')
+   # poly = pvproperty(value=np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0]), name=':POLY')
     ades = pvproperty(value=0.0, name=':ADES')
     bvjt = pvproperty(value=0.0, name=':BVJT')
     mkbvftpjasigma = pvproperty(value=0.0, name=':MKBVFTPJASIGMA')
@@ -284,7 +284,7 @@ class KlystronService(simulacrum.Service):
         self.ctx = Context.instance()
         #cmd socket is a synchronous socket, we don't want the asyncio context.
         self.cmd_socket = zmq.Context().socket(zmq.REQ)
-        self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12412)))
+        self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
         init_vals = self.get_klystron_ACTs_from_model()
         klys_pvs = {device_name: KlystronPV(device_name, convert_device_to_element(device_name), self.on_klystron_change, initial_values=init_vals[device_name], prefix=device_name) 
                     for device_name in init_vals.keys()} 

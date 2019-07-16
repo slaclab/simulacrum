@@ -1,0 +1,27 @@
+import os
+import asyncio
+import numpy as np
+from caproto.server import ioc_arg_parser, run, pvproperty, PVGroup
+import simulacrum
+import zmq
+from zmq.asyncio import Context
+
+class GDETPV(PVGroup):
+    enrc = pvproperty(value=0.0, name=':ENRC', read_only=True)
+
+class pulseIntensityService(simulacrum.Service):    
+    def __init__(self):
+        super().__init__()
+        #gdet_pvs = {device_name: GDETPV(prefix=device_name) for device_name in simulacrum.util.device_names if device_name.startswith("GDET")}  #TODO use this line
+        gdet_pvs = {'GDET:FEE1:241','GDET:FEE1:242','GDET:FEE1:243','GDET:FEE1:361','GDET:FEE1:362:ENRC','GDET:FEE1:363','GDET:FEE1:364'}
+        self.add_pvs(bpm_pvs)
+
+
+
+
+
+
+for device_name in simulacrum.util.device_names:
+    if device_name.startswith("GDET"):
+        print(device_name)
+
