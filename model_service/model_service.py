@@ -20,7 +20,7 @@ model_service_dir = os.path.dirname(os.path.realpath(__file__))
 L = simulacrum.util.SimulacrumLog(os.path.splitext(os.path.basename(__file__))[0], level='INFO')
 
 class ModelService:
-    def __init__(self, init_file, name):
+    def __init__(self, init_file, name, enable_jitter=False):
         self.name = name
         tao_lib = os.environ.get('TAO_LIB', '')
         self.tao = pytao.Tao(so_lib=tao_lib)
@@ -32,6 +32,7 @@ class ModelService:
         self.model_broadcast_socket = zmq.Context().socket(zmq.PUB)
         self.model_broadcast_socket.bind("tcp://*:{}".format(os.environ.get('MODEL_BROADCAST_PORT', 66666)))
         self.loop = asyncio.get_event_loop()
+        self.jitter_enabled = enable_jitter
         twiss_table = NTTable([("element", "s"), ("device_name", "s"),
                                        ("s", "d"), ("length", "d"), ("p0c", "d"),
                                        ("alpha_x", "d"), ("beta_x", "d"), ("eta_x", "d"), ("etap_x", "d"), ("psi_x", "d"),
@@ -70,6 +71,7 @@ class ModelService:
             zmq_task = self.loop.create_task(self.recv())
             pva_refresh_task = self.loop.create_task(self.refresh_pva_table())
             broadcast_task = self.loop.create_task(self.broadcast_model_changes())
+            jitter_task = self.loop.create_task(self.add_jitter())
             self.loop.run_forever()
         except KeyboardInterrupt:
             L.info("Shutting down Model Service.")
@@ -145,6 +147,17 @@ class ModelService:
                 self.live_twiss_pv.post(twiss_table)
                 self.live_rmat_pv.post(rmat_table)
                 self.pva_needs_refresh = False
+            await asyncio.sleep(1.0)
+        
+    async def add_jitter(self):
+        while True:
+            if self.jitter_enabled:
+                x0 = np.random.normal(0.0, 0.12*0.001)
+                y0 = np.random.normal(0.0, 0.12*0.001)
+                self.tao.cmd(f"set particle_start x = {x0}")
+                self.tao.cmd(f"set particle_start y = {y0}")
+                self.recalc_needed = True
+                self.need_zmq_broadcast = True
             await asyncio.sleep(1.0)
     
     async def broadcast_model_changes(self):
@@ -337,8 +350,13 @@ if __name__=="__main__":
         help='Name of a Tao model from either lcls-lattice or lcls-classic-lattice.  Must be one of: ' + 
              'lcls_classic, cu_hxr, cu_spec, cu_sxr, sc_sxr, or sc_hxr'
     )
+    parser.add_argument(
+        '--enable-jitter',
+        action='store_true',
+        help='Apply jitter on every model update tick (10 Hz).  This will significantly increase CPU usage.'
+    )
     model_service_args = parser.parse_args()
     tao_init_file = find_model(model_service_args.model_name)
-    serv = ModelService(init_file=tao_init_file, name=model_service_args.model_name.upper())
+    serv = ModelService(init_file=tao_init_file, name=model_service_args.model_name.upper(), enable_jitter=model_service_args.enable_jitter)
     serv.start()
 
