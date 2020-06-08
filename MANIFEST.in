@@ -1,3 +1,0 @@
-include versioneer.py
-include simulacrum/_version.py
-include simulacrum/LCLS_lines.dat
