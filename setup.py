@@ -1,4 +1,3 @@
-from distutils.core import setup
 import setuptools
 import sys
 import versioneer
@@ -34,7 +33,7 @@ classifiers = [
 
 install_requires=['caproto', 'numpy', 'p4p', 'pyzmq']
 
-setup(name='simulacrum',
+setuptools.setup(name='simulacrum',
       version=versioneer.get_version(),
       cmdclass=versioneer.get_cmdclass(),
       author='Matt Gibbs (mgibbs@slac.stanford.edu)',
@@ -44,5 +43,6 @@ setup(name='simulacrum',
       python_requires='>=3.6',
       classifiers=classifiers,
       include_package_data=True,
+      package_data={'': ['*.csv']},
       install_requires=install_requires
       )
