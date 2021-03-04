@@ -62,7 +62,7 @@ class BPMService(simulacrum.Service):
         return orbit
     
     def fetch_bpm_list(self):
-        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele Instrument::BPM*,Instrument::RFB*"})
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele BPM*,RFB*"})
         bpms = [row.split(None, 3)[1:3] for row in self.cmd_socket.recv_pyobj()['result'][:-1]]
         return bpms
     

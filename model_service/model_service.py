@@ -20,12 +20,15 @@ model_service_dir = os.path.dirname(os.path.realpath(__file__))
 L = simulacrum.util.SimulacrumLog(os.path.splitext(os.path.basename(__file__))[0], level='INFO')
 
 class ModelService:
-    def __init__(self, init_file, name, enable_jitter=False):
+    def __init__(self, init_file, name, enable_jitter=False, plot=False):
         self.name = name
         tao_lib = os.environ.get('TAO_LIB', '')
         self.tao = pytao.Tao(so_lib=tao_lib)
         L.debug("Initializing Tao...")
-        self.tao.init("-noplot -init {init_file}".format(init_file=init_file))
+        if plot: 
+            self.tao.init("-init {init_file}".format(init_file=init_file))
+        else:
+            self.tao.init("-noplot -init {init_file}".format(init_file=init_file))
         L.debug("Tao initialization complete!")
         self.tao.cmd("set global lattice_calc_on = F")
         self.tao.cmd('set global var_out_file = " "')
@@ -262,7 +265,7 @@ class ModelService:
         self.model_broadcast_socket.send(orb)
 
     def send_profiles_data(self):
-        twiss_text = self.tao_cmd("show lat -no_label_lines -at beta_a -at beta_b -at e_tot Instrument::OTR*,Instrument::YAG*")
+        twiss_text = self.tao_cmd("show lat -no_label_lines -at beta_a -at beta_b -at e_tot Monitor::OTR*,Monitor::YAG*")
         prof_beta_x = [float(l.split()[5]) for l in twiss_text]
         prof_beta_y = [float(l.split()[6]) for l in twiss_text]
         prof_e = [float(l.split()[7]) for l in twiss_text]
@@ -275,7 +278,7 @@ class ModelService:
         self.model_broadcast_socket.send(prof_data);
 
     def send_particle_positions(self):
-        twiss_text = self.tao_cmd("show lat -no_label_lines -at beta_a -at beta_b -at e_tot Instrument::OTR*,Instrument::YAG*")
+        twiss_text = self.tao_cmd("show lat -no_label_lines -at beta_a -at beta_b -at e_tot Monitor::OTR*,Monitor::YAG*")
         prof_names = [l.split()[1] for l in twiss_text]
         positions_all = {}
         for screen in prof_names:
@@ -389,8 +392,14 @@ if __name__=="__main__":
         action='store_true',
         help='Apply jitter on every model update tick (10 Hz).  This will significantly increase CPU usage.'
     )
+    parser.add_argument(
+        '--plot',
+        action='store_true',
+        help='Show tao plot'
+    )
     model_service_args = parser.parse_args()
     tao_init_file = find_model(model_service_args.model_name)
-    serv = ModelService(init_file=tao_init_file, name=model_service_args.model_name.upper(), enable_jitter=model_service_args.enable_jitter)
+    serv = ModelService(init_file=tao_init_file, name=model_service_args.model_name.upper(), enable_jitter=model_service_args.enable_jitter, 
+                        plot=model_service_args.plot)
     serv.start()
 
