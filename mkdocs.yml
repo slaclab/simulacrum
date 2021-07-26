@@ -1,0 +1,24 @@
+
+
+nav:
+  - index.md
+  - Developer: 
+    - developer/index.md
+    - mkdocs: developer/mkdocs.md
+  
+  - other/index.md
+  
+  
+  
+site_name: Simulacrum
+
+theme:
+  name: 'material'
+  
+  
+markdown_extensions:
+  - codehilite  
+  
+plugins:
+    - search
+    - minify

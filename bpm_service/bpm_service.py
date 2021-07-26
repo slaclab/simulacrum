@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 import numpy as np
+import time
 from caproto.server import ioc_arg_parser, run, pvproperty, PVGroup
 from caproto import AlarmStatus, AlarmSeverity
 import simulacrum
@@ -61,7 +62,7 @@ class BPMService(simulacrum.Service):
         return orbit
     
     def fetch_bpm_list(self):
-        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele Instrument::BPM*,Instrument::RFB*"})
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele BPM*,RFB*"})
         bpms = [row.split(None, 3)[1:3] for row in self.cmd_socket.recv_pyobj()['result'][:-1]]
         return bpms
     
@@ -102,15 +103,16 @@ class BPMService(simulacrum.Service):
                  
             
     async def publish_orbit(self):
+        ts = time.time()
         for row in self.orbit:
             if row['device_name']+":X" in self:
                 if not row['alive']:
                     severity = AlarmSeverity.INVALID_ALARM
                 else:
                     severity = AlarmSeverity.NO_ALARM
-                await self[row['device_name']+":X"].write(row['x'], severity=severity)
-                await self[row['device_name']+":Y"].write(row['y'], severity=severity)
-                await self[row['device_name']+":TMIT"].write(row['tmit'])
+                await self[row['device_name']+":X"].write(row['x'], severity=severity, timestamp=ts)
+                await self[row['device_name']+":Y"].write(row['y'], severity=severity, timestamp=ts)
+                await self[row['device_name']+":TMIT"].write(row['tmit'], timestamp=ts)
     
 def main():
     service = BPMService()

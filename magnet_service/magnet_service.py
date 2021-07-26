@@ -262,7 +262,7 @@ class MagnetService(simulacrum.Service):
     
     def get_magnet_BACTs_from_model(self):
         init_vals = {}
-        for (attr, dev_list, parse_func) in [("bl_hkick", "Kicker::X*", _parse_corr_table), ("bl_vkick", "Kicker::Y*", _parse_corr_table), ("b1_gradient", "Quadrupole::*", _parse_quad_table), ("b_field", "Sbend::*", _parse_bend_table)]:
+        for (attr, dev_list, parse_func) in [("bl_kick", "Hkicker::X*", _parse_corr_table), ("bl_kick", "Vkicker::Y*", _parse_corr_table), ("b1_gradient", "Quadrupole::*", _parse_quad_table), ("b_field", "Sbend::*", _parse_bend_table)]:
             self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show lat -no_label_lines -attribute {attr} {list}".format(attr=attr, list=dev_list)})
             table = self.cmd_socket.recv_pyobj()
             init_vals.update(parse_func(table['result']))

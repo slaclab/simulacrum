@@ -20,24 +20,28 @@ model_service_dir = os.path.dirname(os.path.realpath(__file__))
 L = simulacrum.util.SimulacrumLog(os.path.splitext(os.path.basename(__file__))[0], level='INFO')
 
 class ModelService:
-    def __init__(self, init_file, name, enable_jitter=False):
+    def __init__(self, init_file, name, enable_jitter=False, plot=False):
         self.name = name
         tao_lib = os.environ.get('TAO_LIB', '')
         self.tao = pytao.Tao(so_lib=tao_lib)
         L.debug("Initializing Tao...")
-        self.tao.init("-noplot -init {init_file}".format(init_file=init_file))
+        if plot: 
+            self.tao.init("-init {init_file}".format(init_file=init_file))
+        else:
+            self.tao.init("-noplot -init {init_file}".format(init_file=init_file))
         L.debug("Tao initialization complete!")
         self.tao.cmd("set global lattice_calc_on = F")
+        self.tao.cmd('set global var_out_file = " "')
         self.ctx = Context.instance()
         self.model_broadcast_socket = zmq.Context().socket(zmq.PUB)
         self.model_broadcast_socket.bind("tcp://*:{}".format(os.environ.get('MODEL_BROADCAST_PORT', 66666)))
         self.loop = asyncio.get_event_loop()
         self.jitter_enabled = enable_jitter
-        twiss_table = NTTable([("element", "s"), ("device_name", "s"),
+        self.twiss_table = NTTable([("element", "s"), ("device_name", "s"),
                                        ("s", "d"), ("length", "d"), ("p0c", "d"),
                                        ("alpha_x", "d"), ("beta_x", "d"), ("eta_x", "d"), ("etap_x", "d"), ("psi_x", "d"),
                                        ("alpha_y", "d"), ("beta_y", "d"), ("eta_y", "d"), ("etap_y", "d"), ("psi_y", "d")])
-        rmat_table = NTTable([("element", "s"), ("device_name", "s"), ("s", "d"), ("length", "d"),
+        self.rmat_table = NTTable([("element", "s"), ("device_name", "s"), ("s", "d"), ("length", "d"),
                               ("r11", "d"), ("r12", "d"), ("r13", "d"), ("r14", "d"), ("r15", "d"), ("r16", "d"),
                               ("r21", "d"), ("r22", "d"), ("r23", "d"), ("r24", "d"), ("r25", "d"), ("r26", "d"),
                               ("r31", "d"), ("r32", "d"), ("r33", "d"), ("r34", "d"), ("r35", "d"), ("r36", "d"),
@@ -45,16 +49,23 @@ class ModelService:
                               ("r51", "d"), ("r52", "d"), ("r53", "d"), ("r54", "d"), ("r55", "d"), ("r56", "d"),
                               ("r61", "d"), ("r62", "d"), ("r63", "d"), ("r64", "d"), ("r65", "d"), ("r66", "d")])
         initial_twiss_table, initial_rmat_table = self.get_twiss_table()
-        self.live_twiss_pv = SharedPV(nt=twiss_table, 
+        sec, nanosec = divmod(float(time.time()), 1.0)
+        initial_twiss_table = self.twiss_table.wrap(initial_twiss_table)
+        initial_twiss_table['timeStamp']['secondsPastEpoch'] = sec
+        initial_twiss_table['timeStamp']['nanoseconds'] = nanosec
+        initial_rmat_table = self.rmat_table.wrap(initial_rmat_table)
+        initial_rmat_table['timeStamp']['secondsPastEpoch'] = sec
+        initial_rmat_table['timeStamp']['nanoseconds'] = nanosec
+        self.live_twiss_pv = SharedPV(nt=self.twiss_table, 
                            initial=initial_twiss_table,
                            loop=self.loop)
-        self.design_twiss_pv = SharedPV(nt=twiss_table, 
+        self.design_twiss_pv = SharedPV(nt=self.twiss_table, 
                            initial=initial_twiss_table,
                            loop=self.loop)
-        self.live_rmat_pv = SharedPV(nt=rmat_table, 
+        self.live_rmat_pv = SharedPV(nt=self.rmat_table, 
                            initial=initial_rmat_table,
                            loop=self.loop)
-        self.design_rmat_pv = SharedPV(nt=rmat_table, 
+        self.design_rmat_pv = SharedPV(nt=self.rmat_table, 
                            initial=initial_rmat_table,
                            loop=self.loop)
         self.recalc_needed = False
@@ -143,9 +154,16 @@ class ModelService:
         """
         while True:
             if self.pva_needs_refresh:
-                twiss_table, rmat_table = self.get_twiss_table()
-                self.live_twiss_pv.post(twiss_table)
-                self.live_rmat_pv.post(rmat_table)
+                sec, nanosec = divmod(float(time.time()), 1.0)
+                new_twiss_table, new_rmat_table = self.get_twiss_table()
+                new_twiss_table = self.twiss_table.wrap(new_twiss_table)
+                new_twiss_table['timeStamp']['secondsPastEpoch'] = sec
+                new_twiss_table['timeStamp']['nanoseconds'] = nanosec
+                new_rmat_table = self.rmat_table.wrap(new_rmat_table)
+                new_rmat_table['timeStamp']['secondsPastEpoch'] = sec
+                new_rmat_table['timeStamp']['nanoseconds'] = nanosec
+                self.live_twiss_pv.post(new_twiss_table)
+                self.live_rmat_pv.post(new_rmat_table)
                 self.pva_needs_refresh = False
             await asyncio.sleep(1.0)
         
@@ -175,17 +193,14 @@ class ModelService:
                 except Exception as e:
                     L.warning("SEND ORBIT FAILED: %s", e)
                 try:
-                    self.send_profiles_twiss()
+                    self.send_profiles_data()
                 except Exception as e:
-                    L.warning("SEND PROFILES TWISS FAILED: %s", e)
-                try:
-                    self.send_prof_orbit()
-                except Exception as e:
-                    L.warning("SEND PROF ORBIT FAILED: %s", e)
+                    L.warning("SEND PROF DATA FAILED: %s", e)
                 try:
                     self.send_und_twiss()
                 except Exception as e:
                     L.warning("SEND UND TWISS FAILED: %s", e)
+
                 self.need_zmq_broadcast = False
             await asyncio.sleep(0.1)
     
@@ -225,8 +240,8 @@ class ModelService:
         if "ERROR" in twiss_text[0]:
             twiss_text = self.tao_cmd("show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b BEGUNDS")
         #format to list of comma separated values
-        msg='twiss from get_twiss: {}'.format(twiss_text)
-        L.info(msg)
+        #msg='twiss from get_twiss: {}'.format(twiss_text)
+        #L.info(msg)
         twiss = twiss_text[0].split()
         return twiss
 
@@ -249,18 +264,40 @@ class ModelService:
         self.model_broadcast_socket.send_pyobj(metadata, zmq.SNDMORE)
         self.model_broadcast_socket.send(orb)
 
-    def send_prof_orbit(self):
-        orb = self.get_prof_orbit()
-        metadata = {"tag" : "prof_orbit", "dtype": str(orb.dtype), "shape": orb.shape}
-        self.model_broadcast_socket.send_pyobj(metadata, zmq.SNDMORE)
-        self.model_broadcast_socket.send(orb)
+    def send_profiles_data(self):
+        twiss_text = self.tao_cmd("show lat -no_label_lines -at beta_a -at beta_b -at e_tot Monitor::OTR*,Monitor::YAG*")
+        prof_beta_x = [float(l.split()[5]) for l in twiss_text]
+        prof_beta_y = [float(l.split()[6]) for l in twiss_text]
+        prof_e = [float(l.split()[7]) for l in twiss_text]
+        prof_names = [l.split()[1] for l in twiss_text]
+        prof_orbit = self.get_prof_orbit()
+        prof_data = np.concatenate((prof_orbit, np.array([prof_beta_x, prof_beta_y, prof_e,  prof_names])))
 
-    def send_profiles_twiss(self):
-        twiss_text = np.asarray(self.tao_cmd("show lat -at beta_a -at beta_b Instrument::OTR*,Instrument::YAG*"))
-        metadata = {"tag" : "prof_twiss", "dtype": str(twiss_text.dtype), "shape": twiss_text.shape}
+        metadata = {"tag" : "prof_data", "dtype": str(prof_data.dtype), "shape": prof_data.shape}
         self.model_broadcast_socket.send_pyobj(metadata, zmq.SNDMORE)
-        self.model_broadcast_socket.send(np.stack(twiss_text));        
-           
+        self.model_broadcast_socket.send(prof_data);
+
+    def send_particle_positions(self):
+        twiss_text = self.tao_cmd("show lat -no_label_lines -at beta_a -at beta_b -at e_tot Monitor::OTR*,Monitor::YAG*")
+        prof_names = [l.split()[1] for l in twiss_text]
+        positions_all = {}
+        for screen in prof_names:
+            positions = self.get_particle_positions(screen);
+            if not positions:
+                continue
+            positions_all[screen] = [[float(position.split()[1]), float(position.split()[3])] for position in positions]
+        metadata = {"tag": "part_positions"}
+        self.model_broadcast_socket.send_pyobj(metadata, zmq.SNDMORE)
+        self.model_broadcast_socket.send_pyobj(positions_all)
+
+    def get_particle_positions(self, screen):
+        L.debug("Getting particle positions")
+        cmd = "show particle -all -ele {screen}".format(screen=screen)
+        results = self.tao_cmd(cmd);
+        if(len(results) < 3):
+            return False
+        return results[2:]
+
     def send_und_twiss(self):
         twiss = self.get_twiss()
         metadata = {"tag": "und_twiss"}
@@ -355,8 +392,14 @@ if __name__=="__main__":
         action='store_true',
         help='Apply jitter on every model update tick (10 Hz).  This will significantly increase CPU usage.'
     )
+    parser.add_argument(
+        '--plot',
+        action='store_true',
+        help='Show tao plot'
+    )
     model_service_args = parser.parse_args()
     tao_init_file = find_model(model_service_args.model_name)
-    serv = ModelService(init_file=tao_init_file, name=model_service_args.model_name.upper(), enable_jitter=model_service_args.enable_jitter)
+    serv = ModelService(init_file=tao_init_file, name=model_service_args.model_name.upper(), enable_jitter=model_service_args.enable_jitter, 
+                        plot=model_service_args.plot)
     serv.start()
 

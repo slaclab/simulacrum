@@ -8,8 +8,7 @@ import zmq
 import time
 from zmq.asyncio import Context
 import pickle
-import matplotlib.pyplot as pl
-
+from scipy.stats import gaussian_kde
 #set up python logger
 L = simulacrum.util.SimulacrumLog(os.path.splitext(os.path.basename(__file__))[0], level='INFO')
 
@@ -24,7 +23,7 @@ class ProfMonService(simulacrum.Service):
                 'EVR:UND1:PM01:CTRL.DG0E', 'EVR:IN20:PM01:CTRL.DG1E', 'YAGS:IN20:841:FRAME_RATE', 
                 'YAGS:IN20:351:FRAME_RATE', 'OTRS:IN20:541:FRAME_RATE', 'OTRS:IN20:621:FRAME_RATE',
                 'YAGS:IN20:921:FRAME_RATE', 'OTRS:LI21:291:FRAME_RATE', 'OTRS:LI25:342:FRAME_RATE', 
-                'CTHD:IN20:206:FRAME_RATE', 'SIOC:SYS0:ML02:AO000'] #last one not strictly necessary but speeds up matlab init
+                'CTHD:IN20:206:FRAME_RATE', 'OTRS:DMPH:695:Acquire'] #last one not strictly necessary but speeds up matlab init
 
     def __init__(self):
         L.info('Initializing PVs')
@@ -111,41 +110,63 @@ class ProfMonService(simulacrum.Service):
         model_broadcast_socket.connect('tcp://127.0.0.1:{}'.format(os.environ.get('MODEL_BROADCAST_PORT', 66666)))
         model_broadcast_socket.setsockopt(zmq.SUBSCRIBE, b'')
         while True:
-            L.info("Checking for new profile data.")
+            L.debug("Checking for new profile data.")
             md = await model_broadcast_socket.recv_pyobj(flags=flags)
-            msg ="Profile data incoming: {}".format( md)
-            L.info(msg)
-            if md.get("tag", None) == "prof_twiss":
+            particles = False
+            if md.get("tag", None) == "part_positions":
+                particles = True;
+                L.info("Got new particle positions")
+                screens = await model_broadcast_socket.recv_pyobj(flags=flags)
+                for screen in screens:
+                    devName = self.ele2dev[screen]
+                    if devName not in self.profiles:
+                        continue
+                    beamProps = { 'particlePos': screens[screen]}
+                    image = self.gen_beam_image(beamProps, self.profiles[devName]['props']['values'], img_type="positions")
+                    self.profiles[devName]['image'] = image.tolist()
+            elif md.get("tag", None) == "prof_data" and particles == False:
+                msg ="Profile data incoming: {}".format(md)
+                L.info(msg)
                 msg = await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
                 buf = memoryview(msg)
                 A = np.frombuffer(buf, dtype=md['dtype'])
-                result = A.reshape(md['shape'])[3:-3]
-            else:
-                await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
+                result = np.rot90(A.reshape(md['shape']))
+                for i in range(result.shape[0]):
+                    orbit_x, orbit_y, beta_a, beta_b, e, name  = result[i]
+                    L.debug(beta_a)
+                    L.debug(beta_b)
+                    L.debug(name)
+                    devName = self.ele2dev[name]
+                    if devName not in self.profiles:
+                        continue
+                    #CGI
+                    beamProps = {'beta_a': float(beta_a), 'beta_b': float(beta_b), 'x': float(orbit_x), 'y': float(orbit_y), 'e': float(e)}
+                    image = self.gen_beam_image(beamProps, self.profiles[devName]['props']['values'], img_type = "not_smooth")
+                    self.profiles[devName]['image'] = image.tolist()
+            else: 
+                md = await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
                 
-
-            L.info("Checking for new profile orbits.")
-            md = await model_broadcast_socket.recv_pyobj(flags=flags)
-            msg="Profile orbit incoming: {}".format( md)
-            L.info(msg)
-            if md.get("tag", None) == "prof_orbit":
-                msg = await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
-                buf = memoryview(msg)
-                A = np.frombuffer(buf, dtype=md['dtype'])
-                orbit = A.reshape(md['shape'])
-            else:
-                await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
-        
-            for i, row in enumerate(result):
-                ( _, name, _, _, _, beta_a, beta_b) = row.split()
-                devName = self.ele2dev[name]
-                if devName not in self.profiles:
-                    continue
-
+           # L.info("Checking for new profile orbits.")
+           # md = await model_broadcast_socket.recv_pyobj(flags=flags)            
+           # if md.get("tag", None) == "prof_orbit":
+           #     msg="Profile orbit incoming: {}".format( md)
+           #     L.info(msg)
+           #     msg = await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
+           #     buf = memoryview(msg)
+           #     A = np.frombuffer(buf, dtype=md['dtype'])
+           #     orbit = A.reshape(md['shape'])
+           # else:
+           #     await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
+            
+            
+               #devName = self.ele2dev[name]
+                #if devName not in self.profiles:
+                #    continue
                 #CGI
-                beamProps = {'beta_a': float(beta_a), 'beta_b': float(beta_b), 'x': orbit[0][i], 'y': orbit[1][i]}
-                image = self.gen_beam_image(beamProps, self.profiles[devName]['props']['values'], smooth=False)
-                self.profiles[devName]['image'] = image.tolist()
+                #beamProps = {'beta_a': float(beta_a), 'beta_b': float(beta_b), 'x': orbit[0][i], 'y': orbit[1][i]}
+                #image = self.gen_beam_image(beamProps, self.profiles[devName]['props']['values'], smooth=False)
+                #self.profiles[devName]['image'] = image.tolist()
+            
             await self.publish_profiles()
 
     async def publish_profiles(self):
@@ -158,9 +179,8 @@ class ProfMonService(simulacrum.Service):
                     continue
 
     # Generate 2D gaussian from orbit & betas.
-    def gen_beam_image(self, beamProps, camProps, smooth = True):
+    def gen_beam_image(self, beamProps, camProps, img_type = "smooth"):
 
-        beta_a, beta_b, x, y = beamProps['beta_a'], beamProps['beta_b'], beamProps['x'], beamProps['y']
         # image parameters
         imageX = camProps[0]
         imageY = camProps[1]
@@ -168,50 +188,87 @@ class ProfMonService(simulacrum.Service):
         cal = (camProps[3]*1e-6 if camProps[3] else 1e-5)   # resolution ie  calibration in m/pixel  
         roiX = camProps[6]
         roiY = camProps[7]
+        centerX = camProps[10]
+        centerY = camProps[11]
         if(roiX*roiY == 0): 
             roiX = imageX
             roiY = imageY
-        centerX = camProps[10]
-        centerY = camProps[11]
-        #print("Cal: %f, dimX: %d, dimY: %d, centerX: %d, centerX: %d" % (cal, dimX, dimY, centerX, centerY))
-        # beam parameters
-        emittance = 0.4e-6 
-        beam_size_x = np.sqrt(beta_a*emittance)
-        beam_size_y = np.sqrt(beta_b*emittance)
-        #beam parameters in pixels
-        sig_x = beam_size_x/cal
-        sig_y = beam_size_y/cal
-        xPos = 1e-3*x/cal
-        yPos = 1e-3*y/cal
-        #normalization of uncorrelated 2D gaussian.
-        A = 1./np.pi/sig_x/sig_y
+        if(centerX== 0 or centerY == 0):
+            centerX = roiX/2
+            centerY = roiY/2
+
         #Estimate camera intensity, see profmon_simulCreate.m. basically # of e- * quantum efficiency / attenuation factor
-        q = 1e-9
+        q = .2e-9
         e0 = 1.6e-19
         qe = 2e-3
-        atten = 1
+        atten = 4
         intensity = (q/e0)*qe/atten
-        n_part = int(1e6)
-        #generate image. TODO: get particle orbit and offset in x and y
-        x = np.arange(1, roiX+1) - centerX - xPos
-        y = np.arange(1, roiY+1) - centerY - yPos
-        if(smooth):
-            x2 = -((x/sig_x)**2)/2
-            y2 = -((y/sig_y)**2)/2
-            xx2, yy2 = np.meshgrid(x2, y2)
-            img = intensity*A*np.exp(xx2 + yy2)
+        
+        #print("Cal: %f, dimX: %d, dimY: %d, centerX: %d, centerX: %d" % (cal, dimX, dimY, centerX, centerY))
+        # beam parameters
+        if(img_type == "positions"):
+            pos = np.rot90(beamProps['particlePos'])
+            px = pos[0]/cal
+            py = pos[1]/cal
+            n_part = len(py)
+            if(n_part < 1e4):
+                px = px + centerX
+                py = py + centerY
+                img = intensity*self.KDEimage(px, py, int(roiX), int(roiY))
+            else:
+                x = np.arange(1, roiX+1) - centerX
+                y = np.arange(1, roiY+1) - centerY 
+                x = np.append(x - 0.5, x[-1]+0.5)
+                y = np.append(y - 0.5, y[-1]+0.5)
+                (h, _,_) = np.histogram2d(py, px, bins = (y, x))
+                img = intensity/n_part*h
+            #print(img)
         else:
-            if('particlePos' not in beamProps):
+            beta_a, beta_b, x, y, e = beamProps['beta_a'], beamProps['beta_b'], beamProps['x'], beamProps['y'], beamProps['e']
+            emittance = 1e-6#0.4e-6 
+            gamma = e/0.511e6
+            beam_size_x = np.sqrt(beta_a*emittance/gamma)
+            beam_size_y = np.sqrt(beta_b*emittance/gamma)
+            #beam parameters in pixels
+            sig_x = beam_size_x/cal
+            sig_y = beam_size_y/cal
+            xPos = 1e-3*x/cal
+            yPos = 1e-3*y/cal
+            #normalization of uncorrelated 2D gaussian.
+            A = 1./np.pi/sig_x/sig_y
+            n_part = int(1e6)
+            #generate image. TODO: get particle orbit and offset in x and y
+            x = np.arange(1, roiX+1) - centerX - xPos
+            y = np.arange(1, roiY+1) - centerY - yPos
+            if(img_type == "smooth"):
+                x2 = -((x/sig_x)**2)/2
+                y2 = -((y/sig_y)**2)/2
+                xx2, yy2 = np.meshgrid(x2, y2)
+                img = intensity*A*np.exp(xx2 + yy2)
+            else:
                 px = np.random.normal(0, sig_x, n_part)
                 py = np.random.normal(0, sig_y, n_part)
                 x = np.append(x - 0.5, x[-1]+0.5)
                 y = np.append(y - 0.5, y[-1]+0.5)
-                (h, _,_, _) = pl.hist2d(py, px, bins = [y, x]) 
+                (h, _,_) = np.histogram2d(py, px, bins = (y, x))
                 img = intensity/n_part*h
         img = img.astype(np.uint8) if bit_depth <= 8 else img.astype(np.uint16) 
         img_flat = np.minimum(img.ravel(), 2**bit_depth - 1) 
         return img_flat
-        
+    
+    def KDEimage(self, x, y, roiY, roiX):
+        xmin = int(x.min())
+        xmax = int(x.max())
+        ymin = int(y.min())
+        ymax = int(y.max())
+        X, Y = np.mgrid[xmin:xmax, ymin:ymax]
+        positions = np.vstack([X.ravel(), Y.ravel()])
+        values = np.vstack([x, y])
+        kernel = gaussian_kde(values)
+        Z = np.reshape(kernel(positions).T, X.shape)
+        img = np.zeros((roiX, roiY));
+        img[xmin:xmax, ymin:ymax] = Z
+        return img
         
 def main():
     service = ProfMonService()
