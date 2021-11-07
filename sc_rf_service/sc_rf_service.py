@@ -37,6 +37,29 @@ lengthIdx = 4
 zPositionIdx = 3
 elemNameIdx = 1
 
+cryomodulePrefixes = set()
+
+
+class CryomodulePV(PVGroup):
+    cryoSumLatchA = pvproperty(value=0, name=":CRYOSUMA_LTCH",
+                               dtype=ChannelType.ENUM,
+                               enum_strings=("OK", "Faulted"))
+    cryoSumLatchB = pvproperty(value=0, name=":CRYOSUMB_LTCH",
+                               dtype=ChannelType.ENUM,
+                               enum_strings=("OK", "Faulted"))
+    beamVacuumLatchA = pvproperty(value=0, name=":BMLNVACA_LTCH",
+                                  dtype=ChannelType.ENUM,
+                                  enum_strings=("OK", "Faulted"))
+    beamVacuumLatchB = pvproperty(value=0, name=":BMLNVACB_LTCH",
+                                  dtype=ChannelType.ENUM,
+                                  enum_strings=("OK", "Faulted"))
+    couplerVacuumLatchA = pvproperty(value=0, name=":CPLRVACA_LTCH",
+                                     dtype=ChannelType.ENUM,
+                                     enum_strings=("OK", "Faulted"))
+    couplerVacuumLatchB = pvproperty(value=0, name=":CPLRVACB_LTCH",
+                                     dtype=ChannelType.ENUM,
+                                     enum_strings=("OK", "Faulted"))
+
 
 class CavityPV(PVGroup):
     pdes = pvproperty(value=0.0, name=':PDES', precision=1)
@@ -44,9 +67,10 @@ class CavityPV(PVGroup):
     phas = pvproperty(value=0.0, name=':PHASE', read_only=True, precision=1)
     pref = pvproperty(value=0.0, name=':PREF', precision=1)
 
-    cudStatus = pvproperty(value="", name=":CUDSTATUS", dtype=ChannelType.STRING)
+    cudStatus = pvproperty(value="TLC", name=":CUDSTATUS", dtype=ChannelType.STRING)
     cudSevr = pvproperty(value=1, name=":CUDSEVR", dtype=ChannelType.ENUM,
-                         enum_strings=("OK", "Warning", "Faulted", "Unknown"))
+                         enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID",
+                                       "PARKED"))
 
     # ssa defaults to On = True
     ssaOn_Des = pvproperty(value=1, name=':SSA:PowerOn', dtype=ChannelType.ENUM,
@@ -57,6 +81,44 @@ class CavityPV(PVGroup):
                               enum_strings=("F", "T"))
     ssaLatch = pvproperty(value=0, name=":SSA_LTCH", dtype=ChannelType.ENUM,
                           enum_strings=("OK", "Faulted"))
+    ssaAlarmSum = pvproperty(value=0, name=":SSA:AlarmSummary.SEVR",
+                             dtype=ChannelType.ENUM,
+                             enum_strings=("", "", "Faulted", "Faulted"))
+    freqOffset = pvproperty(value=0, name=":FREQ_OFFSET.SEVR",
+                            dtype=ChannelType.ENUM, enum_strings=("OK", "Faulted"))
+    resLinkLatch = pvproperty(value=0, name=":RESLINK_LTCH",
+                              dtype=ChannelType.ENUM, enum_strings=("OK", "Faulted"))
+    pllFault = pvproperty(value=0, name=":PLL_FLT", dtype=ChannelType.ENUM,
+                          enum_strings=("OK", "Faulted"))
+    iocWatchdogLatch = pvproperty(value=0, name=":IOCWDOG_LTCH",
+                                  dtype=ChannelType.ENUM,
+                                  enum_strings=("OK", "Faulted"))
+    couplerTemp1Latch = pvproperty(value=0, name=":CPLRTEMP1_LTCH",
+                                   dtype=ChannelType.ENUM,
+                                   enum_strings=("OK", "Faulted"))
+    couplerTemp2Latch = pvproperty(value=0, name=":CPLRTEMP2_LTCH",
+                                   dtype=ChannelType.ENUM,
+                                   enum_strings=("OK", "Faulted"))
+    stepperTempLatch = pvproperty(value=0, name=":STEPTEMP_LTCH",
+                                  dtype=ChannelType.ENUM,
+                                  enum_strings=("OK", "Faulted"))
+    quenchLatch = pvproperty(value=0, name=":QUENCH_LTCH", dtype=ChannelType.ENUM,
+                             enum_strings=("OK", "Faulted"))
+    rfPermit = pvproperty(value=1, name=":RFPERMIT", dtype=ChannelType.ENUM,
+                          enum_strings=("NOT QUENCHED", "QUENCHED"))
+    calibrationSum = pvproperty(value=0, name=":CAV:CALSUM", dtype=ChannelType.ENUM,
+                                enum_strings=("OK", "FAULTED"))
+    rfReadyForBeam = pvproperty(value=1, name=":RFREADYFORBEAM", dtype=ChannelType.ENUM,
+                                enum_strings=("NOT READY", "READY"))
+    piezoFeedbackStatus = pvproperty(value=1, name=":PZT:MODECTRL",
+                                     dtype=ChannelType.ENUM,
+                                     enum_strings=("NOT ON", "ON"))
+    ampFeedbackSum = pvproperty(value=0, name=":AMPFB_SUM", dtype=ChannelType.ENUM,
+                                enum_strings=("OK", "NOT OK"))
+    phaseFeedbackSum = pvproperty(value=0, name=":PHAFB_SUM", dtype=ChannelType.ENUM,
+                                  enum_strings=("OK", "NOT OK"))
+    feedbackSum = pvproperty(value=0, name=":FB_SUM", dtype=ChannelType.ENUM,
+                             enum_strings=("OK", "NOT OK"))
 
     # only using 2=off, 3=on. Defaults to on
     ssa_StatusMsg = pvproperty(value=3, name=':StatusMsg', dtype=ChannelType.ENUM,
@@ -265,10 +327,19 @@ class CavityService(simulacrum.Service):
         self.cmd_socket = zmq.Context().socket(zmq.REQ)
         self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
         init_vals = self.get_cavity_ACTs_from_model()
-        cav_pvs = {
-            device_name: CavityPV(self.on_cavity_change, initial_values=init_vals[device_name], prefix=device_name) for
-            device_name in init_vals.keys()}
+        cav_pvs = {}
+        cm_pvs = {}
+        for device_name in init_vals.keys():
+            cav_pvs[device_name] = CavityPV(self.on_cavity_change,
+                                            initial_values=init_vals[device_name],
+                                            prefix=device_name)
+            cryomodulePrefixes.add(device_name[:-2] + "00")
+
+        for prefix in cryomodulePrefixes:
+            cm_pvs[prefix] = CryomodulePV(prefix=prefix)
+
         self.add_pvs(cav_pvs)
+        self.add_pvs(cm_pvs)
         print("Initialization complete.")
 
     def get_cavity_ACTs_from_model(self):
@@ -276,7 +347,8 @@ class CavityService(simulacrum.Service):
         queryString = "show lat -no_label_lines -attribute {joinedKeys} lcavity::* -no_slaves"
 
         self.cmd_socket.send_pyobj({"cmd": "tao",
-                                    "val": queryString.format(joinedKeys=" -attribute ".join(taoAttributeTypeMap.keys()))})
+                                    "val": queryString.format(
+                                            joinedKeys=" -attribute ".join(taoAttributeTypeMap.keys()))})
         table = self.cmd_socket.recv_pyobj()['result']
         ''' The following section adds aliases to each row'''
         index = 0
