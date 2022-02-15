@@ -71,11 +71,10 @@ class CavityPV(PVGroup):
     amean = pvproperty(value=0.0, name=':AMEAN', read_only=True, precision=1)
     gdes = pvproperty(value=100.0, name=':GDES', precision=1)
     gact = pvproperty(value=0.0, name=':GACT', read_only=True, precision=1)
-    l = pvproperty(value=1.038, name=':L', read_only=True, precision=1)
+    #l = pvproperty(value=1.038, name=':L', read_only=True, precision=1)
     z = pvproperty(value=0.0, name = ':Z', read_only = True, precision=1)
-    ison = pvproperty(value=1, name=':RFREADYFORBEAM', dtype=ChannelType.ENUM,
-                       enum_strings=("Not ready", "Ready"))
-=======
+    #ison = pvproperty(value=1, name=':RFREADYFORBEAM', dtype=ChannelType.ENUM,
+    #                   enum_strings=("Not ready", "Ready"))
 #    phas = pvproperty(value=0.0, name=':PHASE', read_only=True, precision=1)
     pref = pvproperty(value=0.0, name=':PREF', precision=1)
 
@@ -168,7 +167,7 @@ class CavityPV(PVGroup):
                             enum_strings=("SELAP", "SELA", "SEL", "SEL Raw",
                                           "Pulse", "Chirp"))
 
-    def __init__(self, change_callback, initial_values, *args, **kwargs):
+    def __init__(self, device_name, change_callback ,initial_values,  *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.device_name = device_name 
         self.element_name = initial_values[3]
@@ -186,56 +185,15 @@ class CavityPV(PVGroup):
         self.amean._data['value'] = initial_values[0] * initial_values[4] * 1.e-6
         self.gdes._data['value'] = initial_values[0] * initial_values[4] * 1.e-6
         self.gact._data['value'] = initial_values[0] * initial_values[4] * 1.e-6
-        self.l._data['value'] = initial_values[4]
+        self.length._data['value'] = initial_values[4]
         self.z._data['value'] = initial_values[3]
-        self.ison._data['value'] = 1 if initial_values[5]=='T' else 0
-        self.change_callback = change_callback 
-        
-=======
-'''
-        if DEBUG:
-            print(initial_values)
+        self.rfReadyForBeam._data['value'] = 1 if initial_values[5]=='T' else 0        
 
-        self.gact._data['value'] = initial_values[taoAttributes.index("gradient") + 5]
-
-        self.phas._data['value'] = initial_values[taoAttributes.index("phi0") + 5]
-        # actual as placeholder for mean
-        self.pmean._data['value'] = self.phas._data['value']
-
-        self.z._data['value'] = initial_values[zPositionIdx]
-        self.device_name = initial_values[nameIdx]
-        self.elem_name = initial_values[elemNameIdx]
-
-        self.length._data['value'] = initial_values[lengthIdx]
-        # gact * l = aact
-        self.aact._data['value'] = float(self.gact._data['value']) * float(self.length._data['value'])
-
-        # actual as placeholder for mean
-        self.amean._data['value'] = self.aact._data['value']
-
-        self.ssaOnOff_Act = initial_values[taoAttributes.index("is_on") + 5]
-        # self.ssaOnOff_Act._data['value'] = self.ssa_on  # currently unused
-        self.change_callback = change_callback
-'''
-    # The following "putter" commands are run asynchronously, whenever we change... ... the value of a variable that
-    # has a putter associated with it.
-    # ___________________________
-    # In a putter command, we can:
-    # 1. Do nothing, simply type "return;" beneath the async call
-    # 2. Trigger a *different* putter using self.pvProp.write(desired
-    # value)  (simply updates pvProp if the putter doesnt exist)
-    # 3. For pvproperties that are tao attributes (gradient, phase),
-    # use self.change_callback(self, value "ATTRIBUTE")
-    # 4. (Rarely used) Update a different variable, pvProp, without running
-    # pvProp's putter: self.pvProp._data['value'] = desired value
-    # self.pvProp.publish(0)
-    # ***it's always 0, regardless of the desired value!***
-    # __________________________
     @phas.putter
     async def phas(self, instance, value):
-        print('Setting phase to ', value)
-        self.change_callback(self, value, "PHAS")
-        return
+       print('Setting phase to ', value)
+       self.change_callback(self, value, "PHAS")
+       return
 
     @gact.putter
     async def gact(self, instance, value):
@@ -348,7 +306,6 @@ def _make_linac_table(init_vals):
         element = device[1];
         linac_pvs["ACCL:" + section + ":ALL"] = init_vals[device_name][:3] + (element[:-1],)
     return linac_pvs
-=======
 '''    tableEntries = [row.split() for row in table]
 
     if DEBUG:
@@ -377,7 +334,15 @@ class CavityService(simulacrum.Service):
         self.cmd_socket = zmq.Context().socket(zmq.REQ)
         self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
         init_vals = self.get_cavity_ACTs_from_model()
+        
+        for d  in init_vals.keys():
+            print(d)
+            print(init_vals[d])
+            print(type(init_vals[d]))
         cav_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, initial_values=init_vals[device_name], prefix=device_name) for device_name in init_vals.keys()}
+        
+        #cav_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, ppp=init_vals[device_name][0], prefix=device_name) for device_name in init_vals.keys()}
+
         #setting up convenient linac section PVs for changing all of the L1B/L2B/L3B cavities simultaneously. 
         print(cav_pvs.keys())
         linac_init_vals = _make_linac_table(init_vals)
@@ -392,7 +357,7 @@ class CavityService(simulacrum.Service):
         init_vals = {}
         self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show lat -no_label_lines -attribute gradient -attribute phi0 -attribute is_on lcavity::* -no_slaves"})
        # self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show lat -no_label_lines -attribute gradient_err -attribute phi0_err -attribute rf_frequency -attribute is_on -attribute alias lcavity::*"}) 
-'''
+        '''
         cav_pvs = {}
         cm_pvs = {}
         for device_name in init_vals.keys():
@@ -403,22 +368,23 @@ class CavityService(simulacrum.Service):
 
         for prefix in cryomodulePrefixes:
             cm_pvs[prefix] = CryomodulePV(prefix=prefix)
-'''
-
+            '''
+        '''
         self.add_pvs(cav_pvs)
         self.add_pvs(cm_pvs)
-        print("Initialization complete.")
+        print("Initialization complete.") '''
 
-'''    def get_cavity_ACTs_from_model(self):
+        '''    def get_cavity_ACTs_from_model(self):
 
         queryString = "show lat -no_label_lines -attribute {joinedKeys} lcavity::* -no_slaves"
 
         self.cmd_socket.send_pyobj({"cmd": "tao",
                                     "val": queryString.format(
                                             joinedKeys=" -attribute ".join(taoAttributeTypeMap.keys()))})
-'''
+                                            '''
         table = self.cmd_socket.recv_pyobj()['result']
         ''' The following section adds aliases to each row'''
+        '''
         index = 0
         for row in table:
             if (row.find('ACCL:') == -1) and (row.find('TCAV:') == -1):
@@ -427,10 +393,12 @@ class CavityService(simulacrum.Service):
                 index += 1
             else:
                 index += 1
-        ''' End of adding aliases. The "NoAlias" section was needed
+        ''' 
+
+        '''End of adding aliases. The "NoAlias" section was needed
         because not every element has an alias, and we need a dummy
         string in place of it so that the return statement in 
-        _parse_cav_table finds the same # of elements in each row'''
+        _parse_cav_table finds the same # of elements in each row''' 
         init_vals = _parse_cav_table(table)
 
         if DEBUG:
@@ -453,7 +421,7 @@ class CavityService(simulacrum.Service):
             cav_attr = "is_on";
             value = 'T' if value is 'ON' else 'F' 
 
-'''
+            '''
         # Warning: "value" may have to be transformed to match the units that tao expects
         element = cavity_pv.elem_name
         if parameter == "PHAS":
