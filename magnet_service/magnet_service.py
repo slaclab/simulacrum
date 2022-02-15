@@ -6,7 +6,8 @@ import functools
 import math
 from collections import OrderedDict
 from caproto.server import ioc_arg_parser, run, pvproperty, PVGroup
-from caproto.server.records import _Limits
+#from caproto.server.records import _Limits 
+from caproto.server.records.mixins import _Limits
 from caproto import ChannelType
 import simulacrum
 import zmq
@@ -127,7 +128,7 @@ class MagnetPV(PVGroup):
            L.warning("Warning, using a non-implemented magnet control function.")
         return 0
     
-    @pvproperty(value=0.0, name=":BCTRL", mock_record='ao')
+    @pvproperty(value=0.0, name=":BCTRL",record='ao')
     async def bctrl(self, instance):
         # We have to do some hacky stuff with caproto private data
         # because otherwise, the putter method gets called any time
@@ -184,6 +185,10 @@ def _parse_quad_table(table):
     splits = [row.split() for row in table]
     return {simulacrum.util.convert_element_to_device(ele_name): {"length": float(l), "bact": quad_gradient_to_BACT(float(b1_gradient), float(l))} for (_, ele_name, _, _, l, b1_gradient) in splits if ele_name in simulacrum.util.element_names}
 
+def _parse_multipole_table(table):
+    splits = [row.split() for row in table]
+    return {simulacrum.util.convert_element_to_device(ele_name): {"length": 0.0, "bact": multipole_K1L_to_BACT(float(k1l), float(p0c))} for (_, ele_name, _, _, _, k1l, p0c) in splits if ele_name in simulacrum.util.element_names}
+
 def _parse_bend_table(table):
     splits = [row.split() for row in table]
     return {simulacrum.util.convert_element_to_device(ele_name): {"length": float(l), "bact": bend_b_field_to_BACT(float(b_field), float(l))} 
@@ -194,7 +199,7 @@ def bl_kick_to_BACT(bl_kick, l=None):
     return -bl_kick*10.0
 
 def BACT_to_bl_kick(bact, l=None):
-    """Convert SLAC corrector BACT (kG*m) into BMAD compatible T*m units"""
+    """Convert SLAC corrector BACT (kG*m) into Bmad compatible T*m units"""
     return -bact/10.0
 
 def quad_gradient_to_BACT(b1_gradient, l):
@@ -202,8 +207,18 @@ def quad_gradient_to_BACT(b1_gradient, l):
     return -b1_gradient*10.0*l
 
 def quad_BACT_to_gradient(bact, l):
-    """Convert a SLAC quad BACT (kG) into BMAD b1_gradient T/m units"""
+    """Convert a SLAC quad BACT (kG) into Bmad b1_gradient T/m units"""
     return -bact/(10.0*l)                                                                                                  
+
+def multipole_K1L_to_BACT(k1l,p0c):
+    """Convert K1L attribute for skew quad into SLAC BACT kG units"""
+    b_rho = p0c * 1E-9 / 299.792458*1e4
+    return k1l * b_rho
+
+def multipole_BACT_to_K1L(bact,p0c):
+    """Convert a SLAC skew quad BACT (kG) into Bmad K1L"""
+    b_rho = p0c * 1E-9 / 299.792458*1e4
+    return bact/b_rho
 
 def bend_BACT_to_b_field(bact, l):
     """Convert a SLAC bend BACT (GeV/c) into BMAD b_field T units"""
@@ -229,20 +244,27 @@ class MagnetService(simulacrum.Service):
                     for device_name in magnet_device_list
                     if device_name in init_vals}
         self.add_pvs(mag_pvs)
+        #print(init_vals.keys())
+
+        #print(mag_pvs.keys())
         # Lets do some custom additions to handle bend magnets.
         self.add_pvs(self.make_bends())
         
         # Now that we've set up all the magnets, we need to send the model a
         # command to use non-normalized magnetic field units.
-        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "set ele Kicker::*,Quadrupole::*,Sbend::* field_master = T"})
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "set ele Hkicker::*,Vkicker::*Quadrupole::*,Sbend::*,Multipole::* field_master = T"})
         self.cmd_socket.recv_pyobj()
         L.info("Initialization complete.")
         
     def get_magnet_list_from_model(self):
         element_list = []
-        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele -no_slaves Kicker::*,Quadrupole::*"})
-        for row in self.cmd_socket.recv_pyobj()['result'][:-1]:
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele -no_slaves Hkicker::*,Vkicker::*"})
+        l1 =  self.cmd_socket.recv_pyobj()['result'][:-1]
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele -no_slaves Quadrupole::*,Multipole::*"})
+        l2 =  self.cmd_socket.recv_pyobj()['result'][:-1]
+        for row in l1 + l2:
             element_list.append(row.split(None, 3)[1])
+        #print(element_list)
         return element_list
     
     def get_initial_values(self):
@@ -262,7 +284,7 @@ class MagnetService(simulacrum.Service):
     
     def get_magnet_BACTs_from_model(self):
         init_vals = {}
-        for (attr, dev_list, parse_func) in [("bl_kick", "Hkicker::X*", _parse_corr_table), ("bl_kick", "Vkicker::Y*", _parse_corr_table), ("b1_gradient", "Quadrupole::*", _parse_quad_table), ("b_field", "Sbend::*", _parse_bend_table)]:
+        for (attr, dev_list, parse_func) in [("bl_kick", "Hkicker::X*", _parse_corr_table), ("bl_kick", "Vkicker::Y*", _parse_corr_table), ("b1_gradient", "Quadrupole::* ", _parse_quad_table),  ("b_field", "Sbend::*", _parse_bend_table), ("K1L -attribute P0C", "Multipole::*", _parse_multipole_table)]:
             self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show lat -no_label_lines -attribute {attr} {list}".format(attr=attr, list=dev_list)})
             table = self.cmd_socket.recv_pyobj()
             init_vals.update(parse_func(table['result']))
@@ -303,6 +325,11 @@ class MagnetService(simulacrum.Service):
                          "BCXHS1": "BCXHS2", "BCXHS2": "BCXHS2", "BCXHS3": "BCXHS2", "BCXHS4": "BCXHS2",
                          "BCXXL1": "BCXXL2", "BCXXL2": "BCXXL2", "BCXXL3": "BCXXL2", "BCXXL4": "BCXXL2",
                          "BCXSS1": "BCXSS2", "BCXSS2": "BCXSS2", "BCXSS3": "BCXSS2", "BCXSS4": "BCXSS2",
+                         "BCXH1": "BCXH2",  "BCXH2": "BCXH2",  "BCXH3": "BCXH2",  "BCXH4":  "BCXH2",
+                         "BCX11":  "BCX12", "BCX12":   "BCX12", "BCX13":   "BCX12", "BCX14":   "BCX12",
+                         "BCX21":   "BCX22", "BCX22":   "BCX22", "BCX23":  "BCX22", "BCX24":   "BCX22",
+                         "BCXDLU1": "BCXDLU2", "BCXDLU2": "BCXDLU2", "BCXDLU3": "BCXDLU2", "BCXDLU4": "BCXDLU2", 
+                         "BCXDLD1": "BCXDLD2", "BCXDLD2": "BCXDLD2", "BCXDLD3": "BCXDLD2", "BCXDLD4": "BCXDLD2"
                         }
 
         dl_bends = {"BX01": "BX02", "BX02": "BX02",
@@ -320,6 +347,12 @@ class MagnetService(simulacrum.Service):
                     "BXKIK": "BXKIK",
                     "BYKIK1": "BYKIK1", "BYKIK2": "BYKIK1",
                     "BYKIK1S": "BYKIK1S", "BYKIK2S": "BYKIK1S",
+                    "BRB1":   "BRB1", "BRB2": "BRB1",  
+                    "BKYSP0H": "BKYSP0H", "BKYSP1H": "BKYSP0H", "BKYSP2H": "BKYSP0H", "BKYSP3H": "BKYSP0H", "BKYSP4H": "BKYSP0H", "BKYSP5H": "BKYSP0H",
+                    "BLXSPH": "BLXSPH", 
+                    "BYSP1H": "BYSP1H", "BYSP2H": "BYSP1H", 
+                    "BRSP1H": "BRSP1H", "BRSP2H":  "BRSP1H",
+                    "BXSP1H": "BXSP1H",
                    }
         # Get a list of all bends, and the attributes we need to use them.
         self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show lat -tracking_elements -no_label_lines -attribute g -attribute b_field -attribute b_field_err SBend::*"})
@@ -372,6 +405,7 @@ class MagnetService(simulacrum.Service):
             pvs = {}
             for string in bend_strings:
                 pvs.update({bend_pv.device_name: bend_pv for bend_pv in string.make_pvs(limits)})
+            #print(pvs.keys())
             return pvs
 
 class Bend:
