@@ -9,6 +9,12 @@ from zmq.asyncio import Context
 
 import simulacrum
 
+from typing import List, Tuple
+import sys
+sys.path.insert(0, '../lcls-tools/lcls_tools/devices/')
+from scLinac import LINAC_TUPLES, Linac
+#from lcls_tools.devices.scLinac import Cavity, Cryomodule, LINAC_TUPLES, Linac
+
 DEBUG = False
 
 # Known bug:
@@ -62,19 +68,21 @@ class CryomodulePV(PVGroup):
                                      dtype=ChannelType.ENUM,
                                      enum_strings=("OK", "Faulted"))
 
+class RackPV_HWI(PVGroup):
+    hwi = pvproperty(value=0.0, name=":HWINITSUM", dtype=ChannelType.ENUM,
+                     enum_strings=("Ok", "HW Init running", "LLRF chassis problem"))
 
-class RackPV(PVGroup):
-    hwi = pvproperty(value=0.0, name=":HWINITSUM", dtype = ChannelType.ENUM,
-                     enum_strings = ("Ok", "HW Init running", "LLRF chassis problem"))
-    beamLineVacuumA = pvproperty(value=0.0, name=":BMLNVACA_LTCH", dtype = ChannelType.ENUM,
+class RackPV_Vacuum(PVGroup):
+    beamLineVacuumA = pvproperty(value=0.0, name=":BMLNVACA_LTCH", dtype=ChannelType.ENUM,
                                  enum_strings=("Ok", "Fault"))
-    beamLineVacuumB = pvproperty(value=0.0, name=":BMLNVACB_LTCH", dtype = ChannelType.ENUM,
+    beamLineVacuumB = pvproperty(value=0.0, name=":BMLNVACB_LTCH", dtype=ChannelType.ENUM,
                                  enum_strings=("Ok", "Fault"))
-    couplerVacuumA = pvproperty(value=0.0, name=":CPLRVACA_LTCH", dtype = ChannelType.ENUM,
-                                enum_strings=("Ok", "Fault"))
-    couplerVacuumB = pvproperty(value=0.0, name=":CPLRVACB_LTCH", dtype = ChannelType.ENUM,
-                                enum_strings=("Ok", "Fault"))
 
+class RackPV_couplerVacuum(PVGroup):
+    couplerVacuumA = pvproperty(value=0.0, name=":CPLRVACA_LTCH", dtype=ChannelType.ENUM,
+                                enum_strings=("Ok", "Fault"))
+    couplerVacuumB = pvproperty(value=0.0, name=":CPLRVACB_LTCH", dtype=ChannelType.ENUM,
+                                enum_strings=("Ok", "Fault"))
 
 
 class CavityPV(PVGroup):
@@ -98,6 +106,7 @@ class CavityPV(PVGroup):
     cudSevr = pvproperty(value=1, name=":CUDSEVR", dtype=ChannelType.ENUM,
                          enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID",
                                        "PARKED"))
+    cudDesc = pvproperty(value="Name", name=":CUDDESC", dtype=ChannelType.CHAR)
 
     # ssa defaults to On = True
     ssaOn_Des = pvproperty(value=1, name=':SSA:PowerOn', dtype=ChannelType.ENUM,
@@ -106,7 +115,7 @@ class CavityPV(PVGroup):
                             enum_strings=("False", "True"))
     ssaOnOff_Act = pvproperty(value=1, name=':IS_ON', dtype=ChannelType.ENUM,
                               enum_strings=("F", "T"))
-    ssaLatch = pvproperty(value=0, name=":SSA_LTCH", dtype=ChannelType.ENUM,
+    ssaLatch = pvproperty(value=1, name=":SSA_LTCH", dtype=ChannelType.ENUM,
                           enum_strings=("OK", "Fault"))
     ssaAlarmSum = pvproperty(value=0, name=":SSA:AlarmSummary.SEVR",
                              dtype=ChannelType.ENUM,
@@ -352,25 +361,6 @@ def _make_linac_table(init_vals):
     return linac_pvs
 
 
-'''    tableEntries = [row.split() for row in table]
-
-    if DEBUG:
-        print(tableEntries[-1])
-
-    devices = {}
-    for entry in tableEntries:
-        if DEBUG:
-            print(entry)
-        # the first five entries are: ?, element name, ?, z position, length
-        output = entry[:5]
-        idx = 5
-        for attribute, attributeType in taoAttributeTypeMap.items():
-            output.append(attributeType(entry[idx]))
-            idx += 1
-        devices[entry[nameIdx]] = output
-
-    return devices
-'''
 
 
 class CavityService(simulacrum.Service):
@@ -382,24 +372,44 @@ class CavityService(simulacrum.Service):
         self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
         init_vals = self.get_cavity_ACTs_from_model()
 
-        for d in init_vals.keys():
-            print(d)
-            print(init_vals[d])
-            print(type(init_vals[d]))
+        #print(init_vals)  # i.e. {..., 'ACCL:L3B:3450': (14454000.0, 0.0, 621.36, 'CAVL345', 1.038, 'T')}
+
+
+
         cav_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, initial_values=init_vals[device_name],
                                          prefix=device_name) for device_name in init_vals.keys()}
-
+        #print(init_vals["ACCL:L3B:3450"])
+        #print(init_vals)
         # cav_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, ppp=init_vals[device_name][0], prefix=device_name) for device_name in init_vals.keys()}
 
         # setting up convenient linac section PVs for changing all of the L1B/L2B/L3B cavities simultaneously.
-        print(cav_pvs.keys())
+        #print(cav_pvs.keys())
         linac_init_vals = _make_linac_table(init_vals)
-        print(linac_init_vals)
+        #print(linac_init_vals)
         # linac_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, initial_values=linac_init_vals[device_name], prefix=device_name) for device_name in linac_init_vals.keys()}
 
         self.add_pvs(cav_pvs);
         # self.add_pvs(linac_pvs);
         L.info("Initialization complete.")
+
+        #self.get_rackPV_prefix()
+
+    def get_rackPV_prefix(self):
+        DISPLAY_LINAC_OBJECTS: List[Linac] = []
+
+        for name, cryomoduleList in LINAC_TUPLES:
+            displayLinac = Linac(name, cryomoduleList)
+            DISPLAY_LINAC_OBJECTS.append(displayLinac)
+
+        for linac in DISPLAY_LINAC_OBJECTS:
+            for cryomodule in linac.cryomodules.values():
+                for cavity in cryomodule.cavities.values():
+                    print(cavity.pvPrefix, cavity.linac.name, cavity.cryomodule.name,
+                          cavity.number, cavity.rack.rackName)
+        #rack_pv = {device_name: RackPV_HWI()}
+        prefix = "ACCL"
+        #cav_pvs = {device_name: RackPV_HWI(device_name, self.on_cavity_change, initial_values=init_vals[device_name],
+        #                                 prefix=device_name) for device_name in init_vals.keys()}
 
     def get_cavity_ACTs_from_model(self):
         init_vals = {}
@@ -470,16 +480,7 @@ class CavityService(simulacrum.Service):
             cav_attr = "is_on";
             value = 'T' if value is 'ON' else 'F'
 
-            '''
-        # Warning: "value" may have to be transformed to match the units that tao expects
-        element = cavity_pv.elem_name
-        if parameter == "PHAS":
-            cav_attr = "phi0_err"
-        elif parameter == "GACT":
-            cav_attr = "gradient_err"
-        elif parameter == "IS_ON":
-            cav_attr = "is_on"  # the is_on value is already in 'T'/'F' format
-            '''
+
         cmd = f'set ele {element} {cav_attr} = {value}'
         # L.info(cmd)
         self.cmd_socket.send_pyobj({"cmd": "tao", "val": cmd})
