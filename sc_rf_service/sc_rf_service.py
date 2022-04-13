@@ -10,10 +10,6 @@ from zmq.asyncio import Context
 import simulacrum
 
 from typing import List, Tuple
-#import sys
-#sys.path.insert(0, '../lcls-tools/lcls_tools/devices/')
-#from scLinac import LINAC_TUPLES, Linac, LINAC_OBJECTS
-from lcls_tools.devices.scLinac import Cavity, Cryomodule, LINAC_TUPLES, Linac
 
 DEBUG = False
 
@@ -94,7 +90,8 @@ class RackPV_couplerVacuum(PVGroup):
 class WatcherPV(PVGroup):
     heartbeat = pvproperty(value=0, name="SC_CAV_FAULT_HEARTBEAT",
                            dtype=ChannelType.INT)
-
+    heartbeatWatcher = pvproperty(value=0, name="SC_CAV_FAULT:ALHBERR", dtype=ChannelType.ENUM,
+                                  enum_strings=("RUNNING", "NOT_RUNNING", "INVALID"))
 
 class CavityPV(PVGroup):
     pdes = pvproperty(value=0.0, name=':PDES', precision=1)
@@ -384,6 +381,7 @@ class CavityService(simulacrum.Service):
         init_vals = self.get_cavity_ACTs_from_model()
 
         self.add_pvs({"PHYS:SYS0:1:": WatcherPV(prefix="PHYS:SYS0:1:")})
+        self.add_pvs({"ALRM:SYS0:": WatcherPV(prefix="ALRM:SYS0:")})
 
         cav_pvs = {prefix: CavityPV(prefix, self.on_cavity_change, initial_values=init_vals[prefix],
                                          prefix=prefix) for prefix in init_vals.keys()}
