@@ -10,10 +10,10 @@ from zmq.asyncio import Context
 import simulacrum
 
 from typing import List, Tuple
-import sys
-sys.path.insert(0, '../lcls-tools/lcls_tools/devices/')
-from scLinac import LINAC_TUPLES, Linac
-#from lcls_tools.devices.scLinac import Cavity, Cryomodule, LINAC_TUPLES, Linac
+#import sys
+#sys.path.insert(0, '../lcls-tools/lcls_tools/devices/')
+#from scLinac import LINAC_TUPLES, Linac, LINAC_OBJECTS
+from lcls_tools.devices.scLinac import Cavity, Cryomodule, LINAC_TUPLES, Linac
 
 DEBUG = False
 
@@ -55,22 +55,17 @@ class CryomodulePV(PVGroup):
     cryoSumLatchB = pvproperty(value=0, name=":CRYOSUMB_LTCH",
                                dtype=ChannelType.ENUM,
                                enum_strings=("OK", "Faulted"))
-    beamVacuumLatchA = pvproperty(value=0, name=":BMLNVACA_LTCH",
-                                  dtype=ChannelType.ENUM,
-                                  enum_strings=("OK", "Faulted"))
-    beamVacuumLatchB = pvproperty(value=0, name=":BMLNVACB_LTCH",
-                                  dtype=ChannelType.ENUM,
-                                  enum_strings=("OK", "Faulted"))
-    couplerVacuumLatchA = pvproperty(value=0, name=":CPLRVACA_LTCH",
-                                     dtype=ChannelType.ENUM,
-                                     enum_strings=("OK", "Faulted"))
-    couplerVacuumLatchB = pvproperty(value=0, name=":CPLRVACB_LTCH",
-                                     dtype=ChannelType.ENUM,
-                                     enum_strings=("OK", "Faulted"))
+
 
 class RackPV_HWI(PVGroup):
     hwi = pvproperty(value=0.0, name=":HWINITSUM", dtype=ChannelType.ENUM,
                      enum_strings=("Ok", "HW Init running", "LLRF chassis problem"))
+
+    def __init__(self, device_name, change_callback, initial_values, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.device_name = device_name
+        self.element_name = initial_values[3]
+
 
 class RackPV_Vacuum(PVGroup):
     beamLineVacuumA = pvproperty(value=0.0, name=":BMLNVACA_LTCH", dtype=ChannelType.ENUM,
@@ -78,11 +73,27 @@ class RackPV_Vacuum(PVGroup):
     beamLineVacuumB = pvproperty(value=0.0, name=":BMLNVACB_LTCH", dtype=ChannelType.ENUM,
                                  enum_strings=("Ok", "Fault"))
 
+    def __init__(self, device_name, change_callback, initial_values, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.device_name = device_name
+        self.element_name = initial_values[3]
+
+
 class RackPV_couplerVacuum(PVGroup):
     couplerVacuumA = pvproperty(value=0.0, name=":CPLRVACA_LTCH", dtype=ChannelType.ENUM,
                                 enum_strings=("Ok", "Fault"))
     couplerVacuumB = pvproperty(value=0.0, name=":CPLRVACB_LTCH", dtype=ChannelType.ENUM,
                                 enum_strings=("Ok", "Fault"))
+
+    def __init__(self, device_name, change_callback, initial_values, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.device_name = device_name
+        self.element_name = initial_values[3]
+
+
+class WatcherPV(PVGroup):
+    heartbeat = pvproperty(value=0, name="SC_CAV_FAULT_HEARTBEAT",
+                           dtype=ChannelType.INT)
 
 
 class CavityPV(PVGroup):
@@ -157,7 +168,7 @@ class CavityPV(PVGroup):
                                         enum_strings=("", "", "Fault"))
     calibrationSum = pvproperty(value=0, name=":CAV:CALSUM", dtype=ChannelType.ENUM,
                                 enum_strings=("Done", "Incomplete", "Error"))
-    cavityController = pvproperty(value=0, name="CTRL_SUM.SEVR", dtype=ChannelType.ENUM,
+    cavityController = pvproperty(value=0, name=":CTRL_SUM.SEVR", dtype=ChannelType.ENUM,
                                   enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
     rfReadyForBeam = pvproperty(value=1, name=":RFREADYFORBEAM", dtype=ChannelType.ENUM,
                                 enum_strings=("Not Ready", "Ready"))
@@ -372,44 +383,51 @@ class CavityService(simulacrum.Service):
         self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
         init_vals = self.get_cavity_ACTs_from_model()
 
-        #print(init_vals)  # i.e. {..., 'ACCL:L3B:3450': (14454000.0, 0.0, 621.36, 'CAVL345', 1.038, 'T')}
+        self.add_pvs({"PHYS:SYS0:1:": WatcherPV(prefix="PHYS:SYS0:1:")})
 
-
-
-        cav_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, initial_values=init_vals[device_name],
-                                         prefix=device_name) for device_name in init_vals.keys()}
-        #print(init_vals["ACCL:L3B:3450"])
-        #print(init_vals)
-        # cav_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, ppp=init_vals[device_name][0], prefix=device_name) for device_name in init_vals.keys()}
+        cav_pvs = {prefix: CavityPV(prefix, self.on_cavity_change, initial_values=init_vals[prefix],
+                                         prefix=prefix) for prefix in init_vals.keys()}
 
         # setting up convenient linac section PVs for changing all of the L1B/L2B/L3B cavities simultaneously.
         #print(cav_pvs.keys())
         linac_init_vals = _make_linac_table(init_vals)
-        #print(linac_init_vals)
         # linac_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, initial_values=linac_init_vals[device_name], prefix=device_name) for device_name in linac_init_vals.keys()}
 
-        self.add_pvs(cav_pvs);
+        self.add_pvs(cav_pvs)
         # self.add_pvs(linac_pvs);
         L.info("Initialization complete.")
 
-        #self.get_rackPV_prefix()
+        hwi_prefix = {}
+        blv_prefix = {}
+        cpv_prefix = {}
+        for device_name in init_vals.keys():
+            cavityNumber = device_name[-2]
+            if (device_name == "TCAV:DMPH:361" or device_name == "TCAV:DMPH:360"
+                or device_name == "ACCL:GUNB:455"):
+                pass
+            elif cavityNumber == "1" or cavityNumber == "2" or cavityNumber == "3" or cavityNumber == "4":
+                hwi_prefix[device_name[:-2] + "00:RACKA"] = init_vals[device_name]
+                blv_prefix[device_name[:-2] + "00"] = init_vals[device_name]
+                cpv_prefix[device_name[:-2] + "10"] = init_vals[device_name]
 
-    def get_rackPV_prefix(self):
-        DISPLAY_LINAC_OBJECTS: List[Linac] = []
+            elif cavityNumber == "5" or cavityNumber == "6" or cavityNumber == "7" or cavityNumber == "8":
+                hwi_prefix[device_name[:-2] + "00:RACKB"] = init_vals[device_name]
+                blv_prefix[device_name[:-2] + "00"] = init_vals[device_name]
+                cpv_prefix[device_name[:-2] + "10"] = init_vals[device_name]
 
-        for name, cryomoduleList in LINAC_TUPLES:
-            displayLinac = Linac(name, cryomoduleList)
-            DISPLAY_LINAC_OBJECTS.append(displayLinac)
+            else:
+                print("something is wrong with ", device_name)
 
-        for linac in DISPLAY_LINAC_OBJECTS:
-            for cryomodule in linac.cryomodules.values():
-                for cavity in cryomodule.cavities.values():
-                    print(cavity.pvPrefix, cavity.linac.name, cavity.cryomodule.name,
-                          cavity.number, cavity.rack.rackName)
-        #rack_pv = {device_name: RackPV_HWI()}
-        prefix = "ACCL"
-        #cav_pvs = {device_name: RackPV_HWI(device_name, self.on_cavity_change, initial_values=init_vals[device_name],
-        #                                 prefix=device_name) for device_name in init_vals.keys()}
+        hwi_pvs = {device_name: RackPV_HWI(device_name, self.on_cavity_change, initial_values=hwi_prefix[device_name],
+                                           prefix=device_name) for device_name in hwi_prefix.keys()}
+        blv_pvs = {device_name: RackPV_Vacuum(device_name, self.on_cavity_change, initial_values=blv_prefix[device_name],
+                                              prefix=device_name) for device_name in blv_prefix.keys()}
+        cpv_pvs = {device_name: RackPV_couplerVacuum(device_name, self.on_cavity_change, initial_values=cpv_prefix[device_name],
+                                                     prefix=device_name) for device_name in cpv_prefix.keys()}
+        self.add_pvs(hwi_pvs)
+        self.add_pvs(blv_pvs)
+        self.add_pvs(cpv_pvs)
+
 
     def get_cavity_ACTs_from_model(self):
         init_vals = {}
