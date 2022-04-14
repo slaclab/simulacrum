@@ -1,6 +1,7 @@
 import asyncio
 import os
 from collections import OrderedDict
+from typing import List, Tuple
 
 import zmq
 from caproto import ChannelType
@@ -8,8 +9,6 @@ from caproto.server import ioc_arg_parser, run, pvproperty, PVGroup
 from zmq.asyncio import Context
 
 import simulacrum
-
-from typing import List, Tuple
 
 DEBUG = False
 
@@ -95,6 +94,7 @@ class WatcherPV(PVGroup):
     heartbeatWatcher = pvproperty(value=0, name="SC_CAV_FAULT:ALHBERR", dtype=ChannelType.ENUM,
                                   enum_strings=("RUNNING", "NOT_RUNNING", "INVALID"))
 
+
 class CavityPV(PVGroup):
     pdes = pvproperty(value=0.0, name=':PDES', precision=1)
     pmean = pvproperty(value=0.0, name=':PMEAN', precision=1)
@@ -130,9 +130,6 @@ class CavityPV(PVGroup):
     ssaAlarmSum = pvproperty(value=0, name=":SSA:AlarmSummary.SEVR",
                              dtype=ChannelType.ENUM,
                              enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
-    #freqOffset = pvproperty(value=0, name=":FREQ_OFFSET.SEVR",
-    #                        dtype=ChannelType.ENUM,
-                            enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
     cryoSummary = pvproperty(value=0, name=":CRYO_LTCH", dtype=ChannelType.ENUM,
                              enum_strings=("Ok", "Fault"))
     resLinkLatch = pvproperty(value=0, name=":RESLINK_LTCH",
@@ -156,13 +153,13 @@ class CavityPV(PVGroup):
     quenchLatch = pvproperty(value=0, name=":QUENCH_LTCH", dtype=ChannelType.ENUM,
                              enum_strings=("Ok", "Fault"))
     resonanceChassisSummary = pvproperty(value=0, name=":RESINTLK_LTCH", dtype=ChannelType.ENUM,
-                             enum_strings=("Ok", "Fault"))
+                                         enum_strings=("Ok", "Fault"))
     rfPermit = pvproperty(value=1, name=":RFPERMIT", dtype=ChannelType.ENUM,
                           enum_strings=("RF inhibit", "RF allow"))
     piezoHardwareSummary = pvproperty(value=0, name=":PZT:HWSTATSUM", dtype=ChannelType.ENUM,
                                       enum_strings=("", "", "Fault"))
     stepperHardwareSummary = pvproperty(value=0, name=":STEP:HWSTATSUM", dtype=ChannelType.ENUM,
-                                      enum_strings=("", "", "Fault"))
+                                        enum_strings=("", "", "Fault"))
     cavityCharacterization = pvproperty(value=0, name=":CAV:CALSTATSUM", dtype=ChannelType.ENUM,
                                         enum_strings=("", "", "Fault"))
     calibrationSum = pvproperty(value=0, name=":CAV:CALSUM", dtype=ChannelType.ENUM,
@@ -176,10 +173,10 @@ class CavityPV(PVGroup):
                                      enum_strings=("Manual", "Feedback"))
     piezoFeedbackSummary = pvproperty(value=0, name=":PZT:FBSTATSUM",
                                       dtype=ChannelType.ENUM,
-                                      enum_strings=("","","Fault"))
+                                      enum_strings=("", "", "Fault"))
     ampFeedbackSum = pvproperty(value=0, name=":AMPFB_SUM", dtype=ChannelType.ENUM,
                                 enum_strings=("Not clipped", "Clipped RF-only mode",
-                                                             "Clipped beam mode"))
+                                              "Clipped beam mode"))
     phaseFeedbackSum = pvproperty(value=0, name=":PHAFB_SUM", dtype=ChannelType.ENUM,
                                   enum_strings=("Not clipped", "Clipped RF-only mode",
                                                 "Clipped beam mode"))
@@ -351,8 +348,8 @@ class CavityPV(PVGroup):
 def _parse_cav_table(table):
     splits = [row.split() for row in table]
     return {simulacrum.util.convert_element_to_device(elemName): (
-    float(bmadGrad), float(bmadPhas), float(Z), elemName, float(L), str(is_on)) for
-            (_, elemName, _, Z, L, bmadGrad, bmadPhas, is_on) in splits}
+        float(bmadGrad), float(bmadPhas), float(Z), elemName, float(L), str(is_on)) for
+        (_, elemName, _, Z, L, bmadGrad, bmadPhas, is_on) in splits}
 
 
 def _make_linac_table(init_vals):
@@ -371,8 +368,6 @@ def _make_linac_table(init_vals):
     return linac_pvs
 
 
-
-
 class CavityService(simulacrum.Service):
     def __init__(self):
         super().__init__()
@@ -386,10 +381,10 @@ class CavityService(simulacrum.Service):
         self.add_pvs({"ALRM:SYS0:": WatcherPV(prefix="ALRM:SYS0:")})
 
         cav_pvs = {prefix: CavityPV(prefix, self.on_cavity_change, initial_values=init_vals[prefix],
-                                         prefix=prefix) for prefix in init_vals.keys()}
+                                    prefix=prefix) for prefix in init_vals.keys()}
 
         # setting up convenient linac section PVs for changing all of the L1B/L2B/L3B cavities simultaneously.
-        #print(cav_pvs.keys())
+        # print(cav_pvs.keys())
         linac_init_vals = _make_linac_table(init_vals)
         # linac_pvs = {device_name: CavityPV(device_name, self.on_cavity_change, initial_values=linac_init_vals[device_name], prefix=device_name) for device_name in linac_init_vals.keys()}
 
@@ -403,7 +398,7 @@ class CavityService(simulacrum.Service):
         for device_name in init_vals.keys():
             cavityNumber = device_name[-2]
             if (device_name == "TCAV:DMPH:361" or device_name == "TCAV:DMPH:360"
-                or device_name == "ACCL:GUNB:455"):
+                    or device_name == "ACCL:GUNB:455"):
                 pass
             elif cavityNumber == "1" or cavityNumber == "2" or cavityNumber == "3" or cavityNumber == "4":
                 hwi_prefix[device_name[:-2] + "00:RACKA"] = init_vals[device_name]
@@ -420,14 +415,15 @@ class CavityService(simulacrum.Service):
 
         hwi_pvs = {device_name: RackPV_HWI(device_name, self.on_cavity_change, initial_values=hwi_prefix[device_name],
                                            prefix=device_name) for device_name in hwi_prefix.keys()}
-        blv_pvs = {device_name: RackPV_Vacuum(device_name, self.on_cavity_change, initial_values=blv_prefix[device_name],
-                                              prefix=device_name) for device_name in blv_prefix.keys()}
-        cpv_pvs = {device_name: RackPV_couplerVacuum(device_name, self.on_cavity_change, initial_values=cpv_prefix[device_name],
+        blv_pvs = {
+            device_name: RackPV_Vacuum(device_name, self.on_cavity_change, initial_values=blv_prefix[device_name],
+                                       prefix=device_name) for device_name in blv_prefix.keys()}
+        cpv_pvs = {device_name: RackPV_couplerVacuum(device_name, self.on_cavity_change,
+                                                     initial_values=cpv_prefix[device_name],
                                                      prefix=device_name) for device_name in cpv_prefix.keys()}
         self.add_pvs(hwi_pvs)
         self.add_pvs(blv_pvs)
         self.add_pvs(cpv_pvs)
-
 
     def get_cavity_ACTs_from_model(self):
         init_vals = {}
@@ -497,7 +493,6 @@ class CavityService(simulacrum.Service):
         elif parameter == "SSA_ON":
             cav_attr = "is_on";
             value = 'T' if value is 'ON' else 'F'
-
 
         cmd = f'set ele {element} {cav_attr} = {value}'
         # L.info(cmd)
