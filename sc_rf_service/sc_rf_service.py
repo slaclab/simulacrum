@@ -56,6 +56,8 @@ class CryomodulePV(PVGroup):
 class RackPV_HWI(PVGroup):
     hwi = pvproperty(value=0.0, name=":HWINITSUM", dtype=ChannelType.ENUM,
                      enum_strings=("Ok", "HW Init running", "LLRF chassis problem"))
+    fro = pvproperty(value=0, name=":FREQSUM", dtype=ChannelType.ENUM,
+                     enum_strings=("OK", "Still OK", "Faulted"))
 
     def __init__(self, device_name, change_callback, initial_values, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -128,8 +130,8 @@ class CavityPV(PVGroup):
     ssaAlarmSum = pvproperty(value=0, name=":SSA:AlarmSummary.SEVR",
                              dtype=ChannelType.ENUM,
                              enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
-    freqOffset = pvproperty(value=0, name=":FREQ_OFFSET.SEVR",
-                            dtype=ChannelType.ENUM,
+    #freqOffset = pvproperty(value=0, name=":FREQ_OFFSET.SEVR",
+    #                        dtype=ChannelType.ENUM,
                             enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
     cryoSummary = pvproperty(value=0, name=":CRYO_LTCH", dtype=ChannelType.ENUM,
                              enum_strings=("Ok", "Fault"))
