@@ -1,7 +1,6 @@
 import asyncio
 import os
 from collections import OrderedDict
-from typing import List, Tuple
 
 import zmq
 from caproto import ChannelType
@@ -58,11 +57,6 @@ class RackPV_HWI(PVGroup):
     fro = pvproperty(value=0, name=":FREQSUM", dtype=ChannelType.ENUM,
                      enum_strings=("OK", "Still OK", "Faulted"))
 
-    def __init__(self, device_name, change_callback, initial_values, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.device_name = device_name
-        self.element_name = initial_values[3]
-
 
 class RackPV_Vacuum(PVGroup):
     beamLineVacuumA = pvproperty(value=0.0, name=":BMLNVACA_LTCH", dtype=ChannelType.ENUM,
@@ -70,22 +64,12 @@ class RackPV_Vacuum(PVGroup):
     beamLineVacuumB = pvproperty(value=0.0, name=":BMLNVACB_LTCH", dtype=ChannelType.ENUM,
                                  enum_strings=("Ok", "Fault"))
 
-    def __init__(self, device_name, change_callback, initial_values, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.device_name = device_name
-        self.element_name = initial_values[3]
-
 
 class RackPV_couplerVacuum(PVGroup):
     couplerVacuumA = pvproperty(value=0.0, name=":CPLRVACA_LTCH", dtype=ChannelType.ENUM,
                                 enum_strings=("Ok", "Fault"))
     couplerVacuumB = pvproperty(value=0.0, name=":CPLRVACB_LTCH", dtype=ChannelType.ENUM,
                                 enum_strings=("Ok", "Fault"))
-
-    def __init__(self, device_name, change_callback, initial_values, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.device_name = device_name
-        self.element_name = initial_values[3]
 
 
 class WatcherPV(PVGroup):
@@ -413,17 +397,17 @@ class CavityService(simulacrum.Service):
             else:
                 print("something is wrong with ", device_name)
 
-        hwi_pvs = {device_name: RackPV_HWI(device_name, self.on_cavity_change, initial_values=hwi_prefix[device_name],
-                                           prefix=device_name) for device_name in hwi_prefix.keys()}
-        blv_pvs = {
-            device_name: RackPV_Vacuum(device_name, self.on_cavity_change, initial_values=blv_prefix[device_name],
-                                       prefix=device_name) for device_name in blv_prefix.keys()}
-        cpv_pvs = {device_name: RackPV_couplerVacuum(device_name, self.on_cavity_change,
-                                                     initial_values=cpv_prefix[device_name],
-                                                     prefix=device_name) for device_name in cpv_prefix.keys()}
+        hwi_pvs = {device_name: RackPV_HWI(prefix=device_name) for device_name in hwi_prefix.keys()}
+
+        blv_pvs = {device_name: RackPV_Vacuum(prefix=device_name) for device_name in blv_prefix.keys()}
+
+        cpv_pvs = {device_name: RackPV_couplerVacuum(prefix=device_name) for device_name in cpv_prefix.keys()}
+
         self.add_pvs(hwi_pvs)
         self.add_pvs(blv_pvs)
         self.add_pvs(cpv_pvs)
+
+        self.add_pvs({"ALRM:SYS0:": WatcherPV(prefix="ALRM:SYS0:")})
 
     def get_cavity_ACTs_from_model(self):
         init_vals = {}
