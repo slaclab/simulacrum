@@ -169,6 +169,16 @@ class CavityPV(PVGroup):
                                            "Clipped beam mode"))
     parked = pvproperty(value=0, name=":PARK", dtype=ChannelType.ENUM,
                         enum_strings=("Not parked", "Parked"))
+    ssaStatusMsg = pvproperty(value=3, name=':SSA:StatusMsg', dtype=ChannelType.ENUM,
+                              enum_strings=("Unknown", "Faulted", "SSA Off",
+                                            "SSA On", "Resetting Faults...",
+                                            "Powering ON...", "Powering Off...",
+                                            "Fault Reset Failed...",
+                                            "Power On Failed...",
+                                            "Power Off Failed...",
+                                            "Rebooting SSA...",
+                                            "Rebooting X-Port...",
+                                            "Resetting Processor..."))
 
     # only using 2=off, 3=on. Defaults to on
     ssa_StatusMsg = pvproperty(value=3, name=':StatusMsg', dtype=ChannelType.ENUM,
@@ -179,7 +189,8 @@ class CavityPV(PVGroup):
                                              "Power On Failed...",
                                              "Power Off Failed...",
                                              "Rebooting SSA...",
-                                             "Rebooting X-Port..."))
+                                             "Rebooting X-Port...",
+                                             "Resetting Processor..."))
 
     ades = pvproperty(value=0.0, name=':ADES', precision=1)
     aact = pvproperty(value=0.0, name=':AACT', read_only=True, precision=1)
