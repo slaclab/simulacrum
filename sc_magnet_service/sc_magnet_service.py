@@ -1,10 +1,9 @@
 import asyncio
-
 from caproto import ChannelType
-from caproto.server import ioc_arg_parser, run, pvproperty, PVGroup
-from lcls_tools.devices.scLinac import CRYOMODULE_OBJECTS
+from caproto.server import PVGroup, ioc_arg_parser, pvproperty, run
 
 import simulacrum
+from lcls_tools.superconducting.scLinac import CRYOMODULE_OBJECTS
 
 
 class MagnetPV(PVGroup):
@@ -38,8 +37,8 @@ def main():
     service = SCMagnetService()
     asyncio.get_event_loop()
     _, run_options = ioc_arg_parser(
-        default_prefix='',
-        desc="Simulated SC Magnet Service")
+            default_prefix='',
+            desc="Simulated SC Magnet Service")
     run(service, **run_options)
 
 
