@@ -1,10 +1,10 @@
-import asyncio
-import os
 from collections import OrderedDict
 
+import asyncio
+import os
 import zmq
 from caproto import ChannelType
-from caproto.server import ioc_arg_parser, run, pvproperty, PVGroup
+from caproto.server import PVGroup, ioc_arg_parser, pvproperty, run
 from zmq.asyncio import Context
 
 import simulacrum
@@ -86,7 +86,7 @@ class CavityPV(PVGroup):
     phas = pvproperty(value=0.0, name=':PHASE', read_only=True, precision=1)
     ades = pvproperty(value=0.0, name=':ADES', precision=1)
     aact = pvproperty(value=0.0, name=':AACT', read_only=True, precision=1)
-    amean = pvproperty(value=0.0, name=':AMEAN', read_only=True, precision=1)
+    amean = pvproperty(value=0.0, name=':AACTMEAN', read_only=True, precision=1)
     gdes = pvproperty(value=100.0, name=':GDES', precision=1)
     gact = pvproperty(value=0.0, name=':GACT', read_only=True, precision=1)
     # l = pvproperty(value=1.038, name=':L', read_only=True, precision=1)
@@ -171,7 +171,7 @@ class CavityPV(PVGroup):
                         enum_strings=("Not parked", "Parked"))
 
     # only using 2=off, 3=on. Defaults to on
-    ssa_StatusMsg = pvproperty(value=3, name=':StatusMsg', dtype=ChannelType.ENUM,
+    ssa_StatusMsg = pvproperty(value=3, name=':SSA:StatusMsg', dtype=ChannelType.ENUM,
                                enum_strings=("Unknown", "Faulted", "SSA Off",
                                              "SSA On", "Resetting Faults...",
                                              "Powering ON...", "Powering Off...",
@@ -180,13 +180,6 @@ class CavityPV(PVGroup):
                                              "Power Off Failed...",
                                              "Rebooting SSA...",
                                              "Rebooting X-Port..."))
-
-    ades = pvproperty(value=0.0, name=':ADES', precision=1)
-    aact = pvproperty(value=0.0, name=':AACT', read_only=True, precision=1)
-    amean = pvproperty(value=0.0, name=':AMEAN', read_only=True, precision=1)
-
-    gdes = pvproperty(value=0.0, name=':GDES', precision=1)
-    gact = pvproperty(value=0.0, name=':GACT', read_only=True, precision=1)
 
     length = pvproperty(value=1.038, name=':L', read_only=True, precision=1)
     z = pvproperty(value=0.0, name=':Z', read_only=True, precision=1)
@@ -205,6 +198,7 @@ class CavityPV(PVGroup):
     rfMode_Act = pvproperty(value=4, name=':RFMODE', dtype=ChannelType.ENUM,
                             enum_strings=("SELAP", "SELA", "SEL", "SEL Raw",
                                           "Pulse", "Chirp"))
+    adesMax = pvproperty(value=21, name=":ADES_MAX_SRF", dtype=ChannelType.FLOAT)
 
     def __init__(self, device_name, change_callback, initial_values, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -227,6 +221,7 @@ class CavityPV(PVGroup):
         self.length._data['value'] = initial_values[4]
         self.z._data['value'] = initial_values[3]
         self.rfReadyForBeam._data['value'] = 1 if initial_values[5] == 'T' else 0
+        self.change_callback = change_callback
 
     @phas.putter
     async def phas(self, instance, value):
@@ -340,8 +335,8 @@ def _make_linac_table(init_vals):
     L2list = ''.join([f"CAVL{number:02d}*," for number in range(4, 16)])
     L3_1list = ''.join([f"CAVL{number:02d}*," for number in range(16, 26)])
     L3_2list = ''.join([f"CAVL{number:02d}*," for number in range(26, 36)])
-    sections = {"L1B": ("ACCL:L1B:0210", "CAVL02*,CAVL03*,"), "HL1B": ("ACCL:L1B:H110", "CAVC01*,CAVC02*,"),
-                "L2B": ("ACCL:L2B:0410", L2list), "L3B1": ("ACCL:L3B:1610", L3_1list),
+    sections = {"L1B" : ("ACCL:L1B:0210", "CAVL02*,CAVL03*,"), "HL1B": ("ACCL:L1B:H110", "CAVC01*,CAVC02*,"),
+                "L2B" : ("ACCL:L2B:0410", L2list), "L3B1": ("ACCL:L3B:1610", L3_1list),
                 "L3B2": ("ACCL:L3B:1610", L3_2list)};
     linac_pvs = {}
     for section in sections.keys():
@@ -471,13 +466,12 @@ class CavityService(simulacrum.Service):
             cav_attr = "phi0_err";
             cavity_pv.phas._data['value'] = value;
             value = (value - cavity_pv.pdes_i - cavity_pv.pref._data['value']) / 360.0;
-        elif parameter == "GDES":
+        elif parameter == "GDES" or parameter == "GACT":
             value = (value - cavity_pv.gdes_i) * 1e6
             cav_attr = "gradient_err";
         elif parameter == "SSA_ON":
             cav_attr = "is_on";
             value = 'T' if value is 'ON' else 'F'
-
         cmd = f'set ele {element} {cav_attr} = {value}'
         # L.info(cmd)
         self.cmd_socket.send_pyobj({"cmd": "tao", "val": cmd})
@@ -489,8 +483,8 @@ def main():
     service = CavityService()
     asyncio.get_event_loop()
     _, run_options = ioc_arg_parser(
-        default_prefix='',
-        desc="Simulated CM Cavity Service")
+            default_prefix='',
+            desc="Simulated CM Cavity Service")
     run(service, **run_options)
 
 
