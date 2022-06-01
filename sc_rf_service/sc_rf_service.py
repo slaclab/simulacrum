@@ -26,9 +26,9 @@ class BeamlineVacuumPVGroup(PVGroup):
 
 
 class CouplerVacuumPVGroup(PVGroup):
-    rackA = pvproperty(value=0, name=":CPLRVACA_LTCH", dtype=ChannelType.ENUM,
+    rackA = pvproperty(value=0, name="CPLRVACA_LTCH", dtype=ChannelType.ENUM,
                        enum_strings=("Ok", "Fault"))
-    rackB = pvproperty(value=0, name=":CPLRVACB_LTCH", dtype=ChannelType.ENUM,
+    rackB = pvproperty(value=0, name="CPLRVACB_LTCH", dtype=ChannelType.ENUM,
                        enum_strings=("Ok", "Fault"))
 
 
@@ -204,6 +204,9 @@ class CavityPVGroup(PVGroup):
                                                        "PARKED"))
     cudDesc: PvpropertyChar = pvproperty(value="Name", name="CUDDESC",
                                          dtype=ChannelType.CHAR)
+    latch: PvpropertyEnum = pvproperty(value=1, name="SSA_LTCH",
+                                       dtype=ChannelType.ENUM,
+                                       enum_strings=("OK", "Fault"))
     
     def __init__(self, prefix, length):
         
@@ -266,9 +269,6 @@ class SSAPVGroup(PVGroup):
                                            dtype=ChannelType.ENUM,
                                            enum_strings=("NO_ALARM", "MINOR",
                                                          "MAJOR", "INVALID"))
-    latch: PvpropertyEnum = pvproperty(value=1, name=":SSA_LTCH",
-                                       dtype=ChannelType.ENUM,
-                                       enum_strings=("OK", "Fault"))
     
     status_msg: PvpropertyEnum = pvproperty(value=0, name='StatusMsg',
                                             dtype=ChannelType.ENUM,
