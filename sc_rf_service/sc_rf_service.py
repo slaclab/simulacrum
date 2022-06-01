@@ -64,7 +64,11 @@ class PiezoPVGroup(PVGroup):
     prerf_chb_testmsg = pvproperty(name="CHA_TESTMSG2")
     capacitance_a = pvproperty(name="CHA_C")
     capacitance_b = pvproperty(name="CHB_C")
-    prerf_test_status = pvproperty(name="TESTSTS")
+    prerf_test_status: PvpropertyEnum = pvproperty(name="TESTSTS",
+                                                   dtype=ChannelType.ENUM,
+                                                   value=0,
+                                                   enum_strings=("", "Complete",
+                                                                 "Running"))
     
     withrf_run_check = pvproperty(name="RFTESTSTRT")
     withrf_check_status = pvproperty(name="RFTESTSTS")
@@ -79,6 +83,12 @@ class PiezoPVGroup(PVGroup):
     feedback_sum = pvproperty(value=0, name="FBSTATSUM",
                               dtype=ChannelType.ENUM,
                               enum_strings=("", "", "Fault"))
+    
+    @prerf_test_start.putter
+    async def prerf_test_start(self, instance, value):
+        await self.prerf_test_status.write("Running")
+        await sleep(5)
+        await self.prerf_test_status.write("Complete")
 
 
 class CavFaultPVGroup(PVGroup):
