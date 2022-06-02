@@ -1,13 +1,13 @@
-from asyncio import sleep
-
 import asyncio
+from asyncio import sleep
+from random import random
+
 from caproto import ChannelEnum, ChannelInteger, ChannelType
 from caproto.server import (PVGroup, PvpropertyChar, PvpropertyEnum,
                             PvpropertyEnumRO, PvpropertyFloat, PvpropertyFloatRO, PvpropertyString,
                             ioc_arg_parser, pvproperty, run)
-from random import random
-
 from lcls_tools.superconducting.scLinac import L1BHL, LINAC_TUPLES
+
 from simulacrum import Service
 
 
@@ -49,6 +49,9 @@ class StepperPVGroup(PVGroup):
     motor_moving = pvproperty(name="STAT_MOV")
     motor_done = pvproperty(name="STAT_DONE")
 
+    hardware_sum = pvproperty(value=0, name="HWSTATSUM", dtype=ChannelType.ENUM,
+                              enum_strings=("", "", "Fault"))
+
 
 class PiezoPVGroup(PVGroup):
     enable = pvproperty(name="ENABLE")
@@ -82,6 +85,9 @@ class PiezoPVGroup(PVGroup):
 
 
 class CavFaultPVGroup(PVGroup):
+    latch: PvpropertyEnum = pvproperty(value=1, name="SSA_LTCH",
+                                       dtype=ChannelType.ENUM,
+                                       enum_strings=("OK", "Fault"))
     cryoSummary: PvpropertyEnum = pvproperty(value=0, name="CRYO_LTCH",
                                              dtype=ChannelType.ENUM,
                                              enum_strings=("Ok", "Fault"))
@@ -134,6 +140,10 @@ class CavFaultPVGroup(PVGroup):
                                              enum_strings=("Not clipped",
                                                            "Clipped RF-only mode",
                                                            "Clipped beam mode"))
+    cavityCharacterization: PvpropertyEnum = pvproperty(value=0,
+                                                        name="CAV:CALSTATSUM",
+                                                        dtype=ChannelType.ENUM,
+                                                        enum_strings=("", "", "Fault"))
 
 
 class CavityPVGroup(PVGroup):
@@ -256,9 +266,6 @@ class SSAPVGroup(PVGroup):
                                            dtype=ChannelType.ENUM,
                                            enum_strings=("NO_ALARM", "MINOR",
                                                          "MAJOR", "INVALID"))
-    latch: PvpropertyEnum = pvproperty(value=1, name=":SSA_LTCH",
-                                       dtype=ChannelType.ENUM,
-                                       enum_strings=("OK", "Fault"))
 
     status_msg: PvpropertyEnum = pvproperty(value=0, name='StatusMsg',
                                             dtype=ChannelType.ENUM,
@@ -382,8 +389,8 @@ def main():
     service = CavityService()
     asyncio.get_event_loop()
     _, run_options = ioc_arg_parser(
-            default_prefix='',
-            desc="Simulated CM Cavity Service")
+        default_prefix='',
+        desc="Simulated CM Cavity Service")
     run(service, **run_options)
 
 
