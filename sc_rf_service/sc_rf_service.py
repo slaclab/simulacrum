@@ -57,27 +57,39 @@ class StepperPVGroup(PVGroup):
     hardware_sum = pvproperty(value=0, name="HWSTATSUM", dtype=ChannelType.ENUM,
                               enum_strings=("", "", "Fault"))
     
-    def __init__(self, prefix, steps_per_hertz, cavity_group):
+    def __init__(self, prefix, cavity_group):
         super().__init__(prefix)
-        self.steps_per_hertz = steps_per_hertz
         self.cavity_group: CavityPVGroup = cavity_group
+        if not self.cavity_group.is_hl:
+            self.steps_per_hertz = 256 / 1.4
+        else:
+            self.steps_per_hertz = 256 / 18.3
     
-    async def move(self, sign: int):
+    async def move(self, move_sign_des: int):
         await self.motor_moving.write("Moving")
         steps = 0
+        step_change = (move_sign_des * self.speed.value)
+        freq_move_sign = move_sign_des if self.cavity_group.is_hl else -move_sign_des
+        
         while self.step_des.value - steps >= self.speed.value:
             await self.step_tot.write(self.step_tot.value + self.speed.value)
-            step_change = (sign * self.speed.value)
             await self.step_signed.write(self.step_signed.value + step_change)
+            
             steps += self.speed.value
+            delta = self.speed.value // self.steps_per_hertz
+            new_detune = self.cavity_group.detune.value + (freq_move_sign * delta)
+            
+            await self.cavity_group.detune.write(new_detune)
             await sleep(1)
-            await self.cavity_group.detune.write(self.cavity_group.detune.value + (step_change / self.steps_per_hertz))
         
         remainder = self.step_des.value - steps
         await self.step_tot.write(self.step_tot.value + remainder)
-        step_change = (sign * remainder)
+        step_change = (move_sign_des * remainder)
         await self.step_signed.write(self.step_signed.value + step_change)
-        await self.cavity_group.detune.write(self.cavity_group.detune.value + (step_change / self.steps_per_hertz))
+        
+        delta = remainder // self.steps_per_hertz
+        new_detune = self.cavity_group.detune.value + (freq_move_sign * delta)
+        await self.cavity_group.detune.write(new_detune)
         
         await self.motor_moving.write("Not Moving")
         await self.motor_done.write("Done")
@@ -274,10 +286,16 @@ class CavityPVGroup(PVGroup):
                                             enum_strings=("No faults",
                                                           "faulted"))
     
-    def __init__(self, prefix, length):
+    def __init__(self, prefix, isHL: bool):
         
         super().__init__(prefix)
-        self.length = length
+        
+        self.is_hl = isHL
+        
+        if isHL:
+            self.length = 0.346
+        else:
+            self.length = 1.038
     
     @ades.putter
     async def ades(self, instance, value):
@@ -429,25 +447,19 @@ class CavityService(Service):
                 cm_list += L1BHL
             for cm_name in cm_list:
                 
-                if cm_name in L1BHL:
-                    length = 0.346
-                    steps_per_hertz = 256 / 1.4
-                else:
-                    length = 1.038
-                    steps_per_hertz = 256 / 18.3
+                is_hl = cm_name in L1BHL
                 
                 for cav_num in range(1, 9):
                     cm_prefix = f"ACCL:{linac_name}:{cm_name}"
                     cav_prefix = cm_prefix + f"{cav_num}0:"
                     
-                    cavityGroup = CavityPVGroup(prefix=cav_prefix, length=length)
+                    cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
                     self.add_pvs(SSAPVGroup(prefix=cav_prefix + "SSA:",
                                             cavityGroup=cavityGroup))
                     
                     self.add_pvs(PiezoPVGroup(prefix=cav_prefix + "PZT:"))
                     self.add_pvs(StepperPVGroup(prefix=cav_prefix + "STEP:",
-                                                steps_per_hertz=steps_per_hertz,
                                                 cavity_group=cavityGroup))
                     self.add_pvs(CavFaultPVGroup(prefix=cav_prefix))
                     
