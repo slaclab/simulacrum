@@ -31,6 +31,7 @@ class BPMService(simulacrum.Service):
         self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
         bpms = self.fetch_bpm_list()
         device_names = [simulacrum.util.convert_element_to_device(bpm[0]) for bpm in bpms]
+        print(device_names)
         device_name_map = zip(bpms, device_names)
         bpm_pvs = {device_name: BPMPV(prefix=device_name) for device_name in device_names if device_name}
         self.add_pvs(bpm_pvs)
@@ -62,7 +63,7 @@ class BPMService(simulacrum.Service):
         return orbit
     
     def fetch_bpm_list(self):
-        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele BPM*,RFB*"})
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele BPM*,RFB*,CMB*"})
         bpms = [row.split(None, 3)[1:3] for row in self.cmd_socket.recv_pyobj()['result'][:-1]]
         return bpms
     
