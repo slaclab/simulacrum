@@ -26,6 +26,7 @@ class MagnetPV(PVGroup):
     eact = pvproperty(value=0.0, name=':EACT')
     edes = pvproperty(value=0.0, name=':EDES')
     eerr = pvproperty(value=0.0, name=':EERR')
+    stat = pvproperty(value=65.0, name=':STAT')
     bdes_save = pvproperty(value=0.0, name=':BDESSAVE')
     edes_save = pvproperty(value=0.0, name=':EDESSAVE')
     ctrl_strings = ("Ready", "TRIM", "PERTURB", "BCON_TO_BDES", "SAVE_BDES",
