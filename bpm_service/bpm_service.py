@@ -48,6 +48,7 @@ class BPMService(simulacrum.Service):
         # This is maybe brittle because we use Tao's "show" command, then parse
         # the results, which the Tao authors advise against because the format of the 
         # results might change.  Oh well, I can't figure out a better way to do it.
+        # TODO: use tao python command instead.
         L.info("Initializing with data from model service.")
         bpms = self.fetch_bpm_list()
         orbit = np.zeros(len(bpms), dtype=[('element_name', 'U60'), ('device_name', 'U60'), ('x', 'float32'), ('y', 'float32'), ('tmit', 'float32'), ('alive', 'bool'), ('z', 'float32')])
