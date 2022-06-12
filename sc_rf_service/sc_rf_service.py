@@ -1,4 +1,4 @@
-from asyncio import sleep, get_event_loop
+from asyncio import get_event_loop, sleep
 
 from caproto import ChannelEnum, ChannelInteger, ChannelType
 from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar, PvpropertyEnum,
@@ -7,7 +7,6 @@ from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar, Pvprope
 from random import random, randrange, uniform
 
 from lcls_tools.superconducting.scLinac import L1BHL, LINAC_TUPLES
-
 from simulacrum import Service
 
 
@@ -101,7 +100,7 @@ class StepperPVGroup(PVGroup):
     @move_pos.putter
     async def move_pos(self, instance, value):
         await self.move(1)
-
+    
     hardware_sum = pvproperty(value=0, name="HWSTATSUM", dtype=ChannelType.ENUM,
                               enum_strings=("", "", "Fault"))
 
@@ -153,9 +152,6 @@ class PiezoPVGroup(PVGroup):
 
 
 class CavFaultPVGroup(PVGroup):
-    latch: PvpropertyEnum = pvproperty(value=1, name="SSA_LTCH",
-                                       dtype=ChannelType.ENUM,
-                                       enum_strings=("OK", "Fault"))
     cryoSummary: PvpropertyEnum = pvproperty(value=0, name="CRYO_LTCH",
                                              dtype=ChannelType.ENUM,
                                              enum_strings=("Ok", "Fault"))
@@ -192,7 +188,7 @@ class CavFaultPVGroup(PVGroup):
                                                                 "MINOR",
                                                                 "MAJOR",
                                                                 "INVALID"))
-
+    
     ampFeedbackSum: PvpropertyEnum = pvproperty(value=0, name="AMPFB_SUM",
                                                 dtype=ChannelType.ENUM,
                                                 enum_strings=("Not clipped",
@@ -246,7 +242,7 @@ class CavityPVGroup(PVGroup):
                                                read_only=True)
     adesMax: PvpropertyFloat = pvproperty(value=21, name="ADES_MAX_SRF",
                                           dtype=ChannelType.FLOAT)
-
+    
     pdes: PvpropertyFloat = pvproperty(value=0.0, name='PDES')
     pmean: PvpropertyFloat = pvproperty(value=0.0, name='PMEAN')
     pact: PvpropertyFloatRO = pvproperty(value=0.0, name='PACT', read_only=True)
@@ -261,7 +257,7 @@ class CavityPVGroup(PVGroup):
     parked: PvpropertyEnum = pvproperty(value=0, name="PARK",
                                         dtype=ChannelType.ENUM,
                                         enum_strings=("Not parked", "Parked"))
-
+    
     # Cavity Summary Display PVs
     cudStatus: PvpropertyString = pvproperty(value="TLC", name="CUDSTATUS",
                                              dtype=ChannelType.STRING)
@@ -283,11 +279,13 @@ class CavityPVGroup(PVGroup):
                                                dtype=ChannelType.INT)
     step_temp: PvpropertyFloat = pvproperty(value=35.0, name="STEPTEMP",
                                             dtype=ChannelType.FLOAT)
-    # TODO probe the PV for actual enum strings
     fscan_stat: PvpropertyEnum = pvproperty(name="FSCAN:SEARCHSTAT",
                                             value=0, dtype=ChannelType.ENUM,
-                                            enum_strings=("No faults",
-                                                          "faulted"))
+                                            enum_strings=("No errors",
+                                                          "None found",
+                                                          "Unknown mode",
+                                                          "Wrong freq",
+                                                          "Data nonsync"))
     
     def __init__(self, prefix, isHL: bool):
         super().__init__(prefix)
@@ -306,20 +304,20 @@ class CavityPVGroup(PVGroup):
         gradient = value / self.length
         if self.gact.value != gradient:
             await self.gdes.write(gradient)
-
+    
     @pdes.putter
     async def pdes(self, instance, value):
         value = value % 360
         await self.pact.write(value)
         await self.pmean.write(value)
-
+    
     @gdes.putter
     async def gdes(self, instance, value):
         await self.gact.write(value)
         amplitude = value * self.length
         if self.aact.value != amplitude:
             await self.ades.write(amplitude)
-
+    
     @rf_state_des.putter
     async def rf_state_des(self, instance, value):
         if value == "Off":
@@ -332,7 +330,7 @@ class CavityPVGroup(PVGroup):
         await self.aact.write(0)
         await self.gact.write(0)
         await self.rf_state_act.write("Off")
-
+    
     async def power_on(self):
         await self.aact.write(self.ades.value)
         await self.amean.write(self.ades.value)
@@ -365,7 +363,7 @@ class SSAPVGroup(PVGroup):
                                                           "Rebooting SSA...",
                                                           "Rebooting X-Port...",
                                                           "Resetting Processor..."))
-
+    
     cal_start: PvpropertyEnum = pvproperty(value=0, name="CALSTRT",
                                            dtype=ChannelType.ENUM,
                                            enum_strings=("Start", "Start"))
@@ -384,10 +382,10 @@ class SSAPVGroup(PVGroup):
                                             dtype=ChannelType.FLOAT)
     
     def __init__(self, prefix, cavityGroup: CavityPVGroup):
-
+        
         super().__init__(prefix)
         self.cavityGroup: CavityPVGroup = cavityGroup
-
+    
     @cal_start.putter
     async def cal_start(self, instance, value):
         """
@@ -419,7 +417,7 @@ class SSAPVGroup(PVGroup):
             await self.off.write("False")
             if self.cavityGroup.rf_state_des.value == "On":
                 await self.cavityGroup.power_on()
-
+    
     @off.putter
     async def off(self, instance, value):
         if value == "True" and self.status_msg.value != "SSA Off":
@@ -435,41 +433,41 @@ class CavityService(Service):
     def __init__(self):
         super().__init__()
         self["PHYS:SYS0:1:SC_CAV_FAULT_HEARTBEAT"] = ChannelInteger(value=0)
-
+        
         self["ALRM:SYS0:SC_CAV_FAULT:ALHBERR"] = ChannelEnum(enum_strings=("RUNNING",
                                                                            "NOT_RUNNING",
                                                                            "INVALID"),
                                                              value=0)
-
+        
         rackA = range(1, 5)
-
+        
         for linac_name, cm_list in LINAC_TUPLES:
             if linac_name == "L1B":
                 cm_list += L1BHL
             for cm_name in cm_list:
-
+                
                 is_hl = cm_name in L1BHL
                 
                 for cav_num in range(1, 9):
                     cm_prefix = f"ACCL:{linac_name}:{cm_name}"
                     cav_prefix = cm_prefix + f"{cav_num}0:"
-
+                    
                     cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
                     self.add_pvs(SSAPVGroup(prefix=cav_prefix + "SSA:",
                                             cavityGroup=cavityGroup))
-
+                    
                     self.add_pvs(PiezoPVGroup(prefix=cav_prefix + "PZT:"))
                     self.add_pvs(StepperPVGroup(prefix=cav_prefix + "STEP:",
                                                 cavity_group=cavityGroup))
                     self.add_pvs(CavFaultPVGroup(prefix=cav_prefix))
-
+                    
                     # Rack PVs are stupidly inconsistent
                     if cav_num in rackA:
                         hwi_prefix = cm_prefix + "00:RACKA:"
                     else:
                         hwi_prefix = cm_prefix + "00:RACKB:"
-
+                    
                     self.add_pvs(HWIPVGroup(prefix=hwi_prefix))
                     self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(CouplerVacuumPVGroup(prefix=cm_prefix + "10:"))
@@ -479,8 +477,8 @@ def main():
     service = CavityService()
     get_event_loop()
     _, run_options = ioc_arg_parser(
-        default_prefix='',
-        desc="Simulated CM Cavity Service")
+            default_prefix='',
+            desc="Simulated CM Cavity Service")
     run(service, **run_options)
 
 
