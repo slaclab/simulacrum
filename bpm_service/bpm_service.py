@@ -31,6 +31,7 @@ class BPMService(simulacrum.Service):
         self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
         bpms = self.fetch_bpm_list()
         device_names = [simulacrum.util.convert_element_to_device(bpm[0]) for bpm in bpms]
+        print(device_names)
         device_name_map = zip(bpms, device_names)
         bpm_pvs = {device_name: BPMPV(prefix=device_name) for device_name in device_names if device_name}
         self.add_pvs(bpm_pvs)
@@ -47,6 +48,7 @@ class BPMService(simulacrum.Service):
         # This is maybe brittle because we use Tao's "show" command, then parse
         # the results, which the Tao authors advise against because the format of the 
         # results might change.  Oh well, I can't figure out a better way to do it.
+        # TODO: use tao python command instead.
         L.info("Initializing with data from model service.")
         bpms = self.fetch_bpm_list()
         orbit = np.zeros(len(bpms), dtype=[('element_name', 'U60'), ('device_name', 'U60'), ('x', 'float32'), ('y', 'float32'), ('tmit', 'float32'), ('alive', 'bool'), ('z', 'float32')])
@@ -62,7 +64,7 @@ class BPMService(simulacrum.Service):
         return orbit
     
     def fetch_bpm_list(self):
-        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele BPM*,RFB*"})
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele BPM*,RFB*,CMB*"})
         bpms = [row.split(None, 3)[1:3] for row in self.cmd_socket.recv_pyobj()['result'][:-1]]
         return bpms
     
