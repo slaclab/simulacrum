@@ -1,13 +1,17 @@
 from asyncio import get_event_loop, sleep
+from random import random, randrange, uniform
 
 from caproto import ChannelEnum, ChannelInteger, ChannelType
 from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar, PvpropertyEnum,
                             PvpropertyEnumRO, PvpropertyFloat, PvpropertyFloatRO, PvpropertyInteger, PvpropertyString,
                             ioc_arg_parser, pvproperty, run)
-from random import random, randrange, uniform
-
 from lcls_tools.superconducting.scLinac import L1BHL, LINAC_TUPLES
+
 from simulacrum import Service
+
+
+class CryomodulePVGroup(PVGroup):
+    nrp = pvproperty(value=0, name="NRP:STATSUMY", dtype=ChannelType.DOUBLE)
 
 
 class HWIPVGroup(PVGroup):
@@ -124,7 +128,7 @@ class PiezoPVGroup(PVGroup):
                                                    value=0,
                                                    enum_strings=("", "Complete",
                                                                  "Running"))
-    
+
     withrf_run_check = pvproperty(name="RFTESTSTRT")
     withrf_check_status: PvpropertyEnum = pvproperty(name="RFTESTSTS",
                                                      dtype=ChannelType.ENUM,
@@ -188,7 +192,7 @@ class CavFaultPVGroup(PVGroup):
                                                                 "MINOR",
                                                                 "MAJOR",
                                                                 "INVALID"))
-    
+
     ampFeedbackSum: PvpropertyEnum = pvproperty(value=0, name="AMPFB_SUM",
                                                 dtype=ChannelType.ENUM,
                                                 enum_strings=("Not clipped",
@@ -296,7 +300,7 @@ class CavityPVGroup(PVGroup):
             self.length = 0.346
         else:
             self.length = 1.038
-    
+
     @ades.putter
     async def ades(self, instance, value):
         await self.aact.write(value)
@@ -439,19 +443,28 @@ class CavityService(Service):
                                                                            "INVALID"),
                                                              value=0)
 
+        self["BSOC:SYSW:2:SumyA"] = ChannelEnum(enum_strings=("FAULT", "OK"),
+                                                value=1)
+        self["BSOC:SYSW:2:SumyB"] = ChannelEnum(enum_strings=("FAULT", "OK"),
+                                                value=1)
+        self["PPS:SYSW:1:BeamReadyA"] = ChannelEnum(enum_strings=("Not_Ready", "Ready"),
+                                                    value=1)
+        self["PPS:SYSW:1:BeamReadyB"] = ChannelEnum(enum_strings=("Not_Ready", "Ready"),
+                                                    value=1)
+
         rackA = range(1, 5)
 
         for linac_name, cm_list in LINAC_TUPLES:
             if linac_name == "L1B":
                 cm_list += L1BHL
             for cm_name in cm_list:
-                
+
                 is_hl = cm_name in L1BHL
-                
+
                 for cav_num in range(1, 9):
                     cm_prefix = f"ACCL:{linac_name}:{cm_name}"
                     cav_prefix = cm_prefix + f"{cav_num}0:"
-                    
+
                     cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
                     self.add_pvs(SSAPVGroup(prefix=cav_prefix + "SSA:",
@@ -471,14 +484,15 @@ class CavityService(Service):
                     self.add_pvs(HWIPVGroup(prefix=hwi_prefix))
                     self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(CouplerVacuumPVGroup(prefix=cm_prefix + "10:"))
+                    self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
 
 
 def main():
     service = CavityService()
     get_event_loop()
     _, run_options = ioc_arg_parser(
-            default_prefix='',
-            desc="Simulated CM Cavity Service")
+        default_prefix='',
+        desc="Simulated CM Cavity Service")
     run(service, **run_options)
 
 
