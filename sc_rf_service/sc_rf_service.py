@@ -290,6 +290,8 @@ class CavityPVGroup(PVGroup):
                                                           "Unknown mode",
                                                           "Wrong freq",
                                                           "Data nonsync"))
+    ssa_overrange: PvpropertyInteger = pvproperty(value=0, name="ASETSUB.VALQ",
+                                                  dtype=ChannelType.INT)
 
     def __init__(self, prefix, isHL: bool):
         super().__init__(prefix)
