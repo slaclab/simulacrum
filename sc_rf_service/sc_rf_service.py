@@ -5,33 +5,40 @@ from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
 from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar, PvpropertyEnum,
                             PvpropertyEnumRO, PvpropertyFloat, PvpropertyFloatRO, PvpropertyInteger, PvpropertyString,
                             ioc_arg_parser, pvproperty, run)
-from lcls_tools.superconducting.scLinac import L1BHL, LINAC_TUPLES
 
+from lcls_tools.superconducting.scLinac import L1BHL, LINAC_TUPLES
 from simulacrum import Service
 
 
 class HeaterPVGroup(PVGroup):
-    setpoint = pvproperty(name="HV:POWER_SETPT", value=3.0)
+    setpoint = pvproperty(name="MANPOS_RQST", value=24.0)
+    readback = pvproperty(name="ORBV", value=24.0)
 
 
 class JTPVGroup(PVGroup):
     readback = pvproperty(name="ORBV", value=30.0)
     ds_setpoint = pvproperty(name="SP_RQST", value=30.0)
+    manual = pvproperty(name="MANUAL", value=0)
+    auto = pvproperty(name="AUTO", value=0)
+    mode = pvproperty(name="MODE", value=0)
+    man_pos = pvproperty(name="MANPOS_RQST", value=40.0)
 
 
 class LiquidLevelPVGroup(PVGroup):
     upstream = pvproperty(name="2601:US:LVL", value=75.0)
-    downstream = pvproperty(name="2301:DS:LVL", value=90.0)
+    downstream = pvproperty(name="2301:DS:LVL", value=93.0)
 
 
 class CryomodulePVGroup(PVGroup):
-    nrp = pvproperty(value=0, name="NRP:STATSUMY", dtype=ChannelType.DOUBLE)
+    nrp = pvproperty(value=0, name="NRP:STATSUMY", dtype=ChannelType.DOUBLE,
+                     record="ai")
     aact_mean_sum = pvproperty(value=0, name="AACTMEANSUM")
 
 
 class HWIPVGroup(PVGroup):
     hwi = pvproperty(value=0, name="HWINITSUM", dtype=ChannelType.ENUM,
-                     enum_strings=("Ok", "HW Init running", "LLRF chassis problem"))
+                     enum_strings=("Ok", "HW Init running", "LLRF chassis problem"),
+                     record="mbbi")
     fro = pvproperty(value=0, name="FREQSUM", dtype=ChannelType.ENUM,
                      enum_strings=("OK", "Still OK", "Faulted"))
     fscan_start = pvproperty(value=0, name="FSCAN:FREQ_START")
@@ -66,6 +73,7 @@ class StepperPVGroup(PVGroup):
     reset_tot = pvproperty(name="TOTABS_RESET")
     reset_signed = pvproperty(name="TOTSGN_RESET")
     steps_cold_landing = pvproperty(name="NSTEPS_COLD")
+    nsteps_park = pvproperty(name="NSTEPS_PARK", value=5000000)
     push_signed_cold = pvproperty(name="PUSH_NSTEPS_COLD.PROC")
     push_signed_park = pvproperty(name="PUSH_NSTEPS_PARK.PROC")
     motor_moving: PvpropertyBoolEnum = pvproperty(value=0, name="STAT_MOV",
@@ -97,7 +105,7 @@ class StepperPVGroup(PVGroup):
         step_change = (move_sign_des * self.speed.value)
         freq_move_sign = move_sign_des if self.cavity_group.is_hl else -move_sign_des
         
-        while self.step_des.value - steps >= self.speed.value:
+        while self.step_des.value - steps >= self.speed.value and self.abort.value != 1:
             await self.step_tot.write(self.step_tot.value + self.speed.value)
             await self.step_signed.write(self.step_signed.value + step_change)
             
@@ -108,6 +116,11 @@ class StepperPVGroup(PVGroup):
             await self.cavity_group.detune.write(new_detune)
             await self.cavity_group.detune_rfs.write(new_detune)
             await sleep(1)
+        
+        if self.abort.value == 1:
+            await self.motor_moving.write("Not Moving")
+            await self.abort.write(0)
+            return
         
         remainder = self.step_des.value - steps
         await self.step_tot.write(self.step_tot.value + remainder)
@@ -287,7 +300,8 @@ class CavityPVGroup(PVGroup):
                                                                  "Ready"))
     parked: PvpropertyEnum = pvproperty(value=0, name="PARK",
                                         dtype=ChannelType.ENUM,
-                                        enum_strings=("Not parked", "Parked"))
+                                        enum_strings=("Not parked", "Parked"),
+                                        record='mbbi')
     
     # Cavity Summary Display PVs
     cudStatus: PvpropertyString = pvproperty(value="TLC", name="CUDSTATUS",
@@ -301,7 +315,8 @@ class CavityPVGroup(PVGroup):
                                          dtype=ChannelType.CHAR)
     ssa_latch: PvpropertyEnum = pvproperty(value=1, name="SSA_LTCH",
                                            dtype=ChannelType.ENUM,
-                                           enum_strings=("OK", "Fault"))
+                                           enum_strings=("OK", "Fault"),
+                                           record="mbbi")
     sel_aset: PvpropertyFloat = pvproperty(value=0.0, name="SEL_ASET",
                                            dtype=ChannelType.FLOAT)
     landing_freq = randrange(-10000, 10000)
@@ -309,6 +324,8 @@ class CavityPVGroup(PVGroup):
                                            name="DFBEST", dtype=ChannelType.INT)
     detune_rfs: PvpropertyInteger = pvproperty(value=landing_freq, name="DF",
                                                dtype=ChannelType.INT)
+    df_cold: PvpropertyFloat = pvproperty(value=0.0, name="DF_COLD",
+                                          dtype=ChannelType.FLOAT)
     step_temp: PvpropertyFloat = pvproperty(value=35.0, name="STEPTEMP",
                                             dtype=ChannelType.FLOAT)
     fscan_stat: PvpropertyEnum = pvproperty(name="FSCAN:SEARCHSTAT",
@@ -493,6 +510,24 @@ class SSAPVGroup(PVGroup):
             await self.cavityGroup.power_off()
 
 
+class PPSPVGroup(PVGroup):
+    ready_a = pvproperty(value=1, dtype=ChannelType.ENUM,
+                         name="BeamReadyA",
+                         enum_strings=("Not_Ready", "Ready"), record="mbbi")
+    ready_b = pvproperty(value=1, dtype=ChannelType.ENUM,
+                         name="BeamReadyB",
+                         enum_strings=("Not_Ready", "Ready"), record="mbbi")
+
+
+class BSOICPVGroup(PVGroup):
+    sum_a = pvproperty(value=1, dtype=ChannelType.ENUM,
+                       name="SumyA",
+                       enum_strings=("FAULT", "OK"), record="mbbi")
+    sum_b = pvproperty(value=1, dtype=ChannelType.ENUM,
+                       name="SumyB",
+                       enum_strings=("FAULT", "OK"), record="mbbi")
+
+
 class CavityService(Service):
     def __init__(self):
         super().__init__()
@@ -503,29 +538,30 @@ class CavityService(Service):
                                                                            "INVALID"),
                                                              value=0)
         
-        self["BSOC:SYSW:2:SumyA"] = ChannelEnum(enum_strings=("FAULT", "OK"),
-                                                value=1)
-        self["BSOC:SYSW:2:SumyB"] = ChannelEnum(enum_strings=("FAULT", "OK"),
-                                                value=1)
-        self["PPS:SYSW:1:BeamReadyA"] = ChannelEnum(enum_strings=("Not_Ready", "Ready"),
-                                                    value=1)
-        self["PPS:SYSW:1:BeamReadyB"] = ChannelEnum(enum_strings=("Not_Ready", "Ready"),
-                                                    value=1)
+        self.add_pvs(BSOICPVGroup(prefix="BSOC:SYSW:2:"))
         
         rackA = range(1, 5)
+        self.add_pvs(PPSPVGroup(prefix="PPS:SYSW:1:"))
         
         for linac_name, cm_list in LINAC_TUPLES:
             self[f"ACCL:{linac_name}:1:AACTMEANSUM"] = ChannelFloat(value=0.0)
+            self[f"ACCL:{linac_name}:1:ADES_MAX"] = ChannelFloat(value=2800.0)
             if linac_name == "L1B":
                 cm_list += L1BHL
             for cm_name in cm_list:
                 
                 is_hl = cm_name in L1BHL
+                heater_prefix = f"CPIC:CM{cm_name}:0000:EHCV:"
+                self.add_pvs(HeaterPVGroup(prefix=heater_prefix))
+                
+                self[f"CRYO:CM{cm_name}:0:CAS_ACCESS"] = ChannelEnum(enum_strings=("Close", "Open"),
+                                                                     value=1)
+                self[f"ACCL:{linac_name}:{cm_name}00:ADES_MAX"] = ChannelFloat(value=168.0)
                 
                 for cav_num in range(1, 9):
                     cm_prefix = f"ACCL:{linac_name}:{cm_name}"
                     cav_prefix = cm_prefix + f"{cav_num}0:"
-                    heater_prefix = f"CHTR:CM{cm_name}:1{cav_num}55:"
+                    
                     jt_prefix = f"CLIC:CM{cm_name}:3001:PVJT:"
                     liquid_level_prefix = f"CLL:CM{cm_name}:"
                     
@@ -538,7 +574,7 @@ class CavityService(Service):
                     self.add_pvs(StepperPVGroup(prefix=cav_prefix + "STEP:",
                                                 cavity_group=cavityGroup))
                     self.add_pvs(CavFaultPVGroup(prefix=cav_prefix))
-                    self.add_pvs(HeaterPVGroup(prefix=heater_prefix))
+                    
                     self.add_pvs(JTPVGroup(prefix=jt_prefix))
                     self.add_pvs(LiquidLevelPVGroup(prefix=liquid_level_prefix))
                     
