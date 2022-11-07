@@ -12,6 +12,8 @@ from simulacrum import Service
 
 class CryomodulePVGroup(PVGroup):
     nrp = pvproperty(value=0, name="NRP:STATSUMY", dtype=ChannelType.DOUBLE)
+    # TODO - find this and see what type pv it is on bcs/ops_lcls2_bcs_main.edl
+    bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.INT)
 
 
 class HWIPVGroup(PVGroup):
@@ -212,6 +214,16 @@ class CavFaultPVGroup(PVGroup):
                                                         name="CAV:CALSTATSUM",
                                                         dtype=ChannelType.ENUM,
                                                         enum_strings=("", "", "Fault"))
+    offline: PvpropertyEnum = pvproperty(name="HWMODE", value=0,
+                                         dtype=ChannelType.ENUM,
+                                         enum_strings=("Online",
+                                                       "Maintenance", "Offline"))
+    checkPhase: PvpropertyInteger = pvproperty(name="CKPSUM", value=0,
+                                               dtype=ChannelType.INT)
+    quenchInterlock: PvpropertyEnum = pvproperty(name="QUENCH_BYP_RBV", value=0,
+                                                 dtype=ChannelType.ENUM,
+                                                 enum_strings=("Not Bypassed",
+                                                               "Bypassed"))
 
 
 class CavityPVGroup(PVGroup):
@@ -223,7 +235,7 @@ class CavityPVGroup(PVGroup):
     gdes: PvpropertyFloat = pvproperty(value=16.0, name='GDES', precision=1)
     gact: PvpropertyFloatRO = pvproperty(value=16.0, name='GACT',
                                          read_only=True, precision=1)
-    rf_state_des: PvpropertyEnum = pvproperty(value=0, name='RFCTRL',
+    rf_state_des: PvpropertyEnum = pvproperty(value=1, name='RFCTRL',
                                               dtype=ChannelType.ENUM,
                                               enum_strings=("Off", "On"))
     # Defaults to pulse
@@ -236,7 +248,7 @@ class CavityPVGroup(PVGroup):
     rf_state_act: PvpropertyEnumRO = pvproperty(value=1, name='RFSTATE',
                                                 dtype=ChannelType.ENUM,
                                                 enum_strings=("Off", "On"),
-                                                read_only=True)
+                                                read_only=False)
     # Defaults to pulse
     rf_mode_act: PvpropertyEnumRO = pvproperty(value=4, name='RFMODE',
                                                dtype=ChannelType.ENUM,
@@ -355,7 +367,7 @@ class SSAPVGroup(PVGroup):
                                            dtype=ChannelType.ENUM,
                                            enum_strings=("NO_ALARM", "MINOR",
                                                          "MAJOR", "INVALID"))
-    status_msg: PvpropertyEnum = pvproperty(value=0, name='StatusMsg',
+    status_msg: PvpropertyEnum = pvproperty(value=3, name='StatusMsg',
                                             dtype=ChannelType.ENUM,
                                             enum_strings=("Unknown", "Faulted",
                                                           "SSA Off",
@@ -386,6 +398,13 @@ class SSAPVGroup(PVGroup):
                                             dtype=ChannelType.FLOAT)
     drive_max: PvpropertyFloat = pvproperty(name="DRV_MAX_REQ", value=0.8,
                                             dtype=ChannelType.FLOAT)
+    nirp: PvpropertyEnum = pvproperty(value=1, name="NRP_PRMT",
+                                      dtype=ChannelType.ENUM,
+                                      enum_strings=("FAULT", "OK"))
+    fault_sum: PvpropertyEnum = pvproperty(value=0, name="FaultSummary.SEVR",
+                                           dtype=ChannelType.ENUM,
+                                           enum_strings=("NO_ALARM", "MINOR",
+                                                         "MAJOR", "INVALID"))
 
     def __init__(self, prefix, cavityGroup: CavityPVGroup):
 
