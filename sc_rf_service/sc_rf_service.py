@@ -5,14 +5,18 @@ from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
 from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar, PvpropertyEnum,
                             PvpropertyEnumRO, PvpropertyFloat, PvpropertyFloatRO, PvpropertyInteger, PvpropertyString,
                             ioc_arg_parser, pvproperty, run)
-
 from lcls_tools.superconducting.scLinac import L1BHL, LINAC_TUPLES
+
 from simulacrum import Service
 
 
 class HeaterPVGroup(PVGroup):
     setpoint = pvproperty(name="MANPOS_RQST", value=24.0)
     readback = pvproperty(name="ORBV", value=24.0)
+    mode_string: PvpropertyString = pvproperty(name="MODE_STRING",
+                                               value="SEQUENCER")
+    manual: PvpropertyBoolEnum = pvproperty(name="MANUAL")
+    sequencer: PvpropertyBoolEnum = pvproperty(name="SEQUENCER")
 
 
 class JTPVGroup(PVGroup):
@@ -22,6 +26,7 @@ class JTPVGroup(PVGroup):
     auto = pvproperty(name="AUTO", value=0)
     mode = pvproperty(name="MODE", value=0)
     man_pos = pvproperty(name="MANPOS_RQST", value=40.0)
+    mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="AUTO")
 
 
 class LiquidLevelPVGroup(PVGroup):
