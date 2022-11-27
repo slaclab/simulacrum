@@ -225,8 +225,9 @@ class CavFaultPVGroup(PVGroup):
                                                         enum_strings=("", "", "Fault"))
     offline: PvpropertyEnum = pvproperty(name="HWMODE", value=0,
                                          dtype=ChannelType.ENUM,
-                                         enum_strings=("Online",
-                                                       "Maintenance", "Offline"))
+                                         enum_strings=("Online", "Maintenance",
+                                                       "Offline", "Maintenance Done",
+                                                       "Ready"))
     checkPhase: PvpropertyInteger = pvproperty(name="CKPSUM", value=0,
                                                dtype=ChannelType.INT)
     quenchInterlock: PvpropertyEnum = pvproperty(name="QUENCH_BYP_RBV", value=0,
@@ -298,7 +299,8 @@ class CavityPVGroup(PVGroup):
                                          dtype=ChannelType.ENUM,
                                          enum_strings=("NO_ALARM", "MINOR",
                                                        "MAJOR", "INVALID",
-                                                       "PARKED"))
+                                                       "MAINTENANCE", "OFFLINE",
+                                                       "READY"))
     cudDesc: PvpropertyChar = pvproperty(value="Name", name="CUDDESC",
                                          dtype=ChannelType.CHAR)
     ssa_latch: PvpropertyEnum = pvproperty(value=1, name="SSA_LTCH",
