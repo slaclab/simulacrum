@@ -1,7 +1,7 @@
 from asyncio import get_event_loop, sleep
 from random import random, randrange, uniform
 
-from caproto import ChannelEnum, ChannelInteger, ChannelType
+from caproto import ChannelEnum, ChannelInteger, ChannelType, AlarmSeverity
 from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar, PvpropertyEnum,
                             PvpropertyEnumRO, PvpropertyFloat, PvpropertyFloatRO, PvpropertyInteger, PvpropertyString,
                             ioc_arg_parser, pvproperty, run)
@@ -16,11 +16,20 @@ class CryomodulePVGroup(PVGroup):
     bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.INT)
 
 
+class HOMPVGroup(PVGroup):
+    upstreamHOM = pvproperty(value=0, name="18:UH:TEMP.SEVR", dtype=ChannelType.ENUM,
+                             enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
+    downstreamHOM = pvproperty(value=0, name="20:DH:TEMP.SEVR", dtype=ChannelType.ENUM,
+                               enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
+
+
 class HWIPVGroup(PVGroup):
     hwi = pvproperty(value=0, name="HWINITSUM", dtype=ChannelType.ENUM,
                      enum_strings=("Ok", "HW Init running", "LLRF chassis problem"))
     fro = pvproperty(value=0, name="FREQSUM", dtype=ChannelType.ENUM,
                      enum_strings=("OK", "Still OK", "Faulted"))
+    prl = pvproperty(value=0, name="PRLSUM.SEVR", dtype=ChannelType.ENUM,
+                     enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
 
 
 class BeamlineVacuumPVGroup(PVGroup):
@@ -224,6 +233,14 @@ class CavFaultPVGroup(PVGroup):
                                                  dtype=ChannelType.ENUM,
                                                  enum_strings=("Not Bypassed",
                                                                "Bypassed"))
+    amplitudeTol: PvpropertyEnum = pvproperty(name="AACTMEAN.SEVR", value=0,
+                                              dtype=ChannelType.ENUM,
+                                              enum_strings=("NO_ALARM", "MINOR",
+                                                            "MAJOR", "INVALID"))
+    phaseTol: PvpropertyEnum = pvproperty(name="PACTMEAN.SEVR", value=0,
+                                          dtype=ChannelType.ENUM,
+                                          enum_strings=("NO_ALARM", "MINOR",
+                                                        "MAJOR", "INVALID"))
 
 
 class CavityPVGroup(PVGroup):
@@ -363,8 +380,7 @@ class SSAPVGroup(PVGroup):
     off: PvpropertyEnum = pvproperty(value=0, name='PowerOff',
                                      dtype=ChannelType.ENUM,
                                      enum_strings=("False", "True"))
-    alarm_sum: PvpropertyEnum = pvproperty(value=0, name="AlarmSummary.SEVR",
-                                           dtype=ChannelType.ENUM,
+    alarm_sum: PvpropertyEnum = pvproperty(value=0, name="AlarmSummary", dtype=ChannelType.ENUM,
                                            enum_strings=("NO_ALARM", "MINOR",
                                                          "MAJOR", "INVALID"))
     status_msg: PvpropertyEnum = pvproperty(value=3, name='StatusMsg',
@@ -485,6 +501,7 @@ class CavityService(Service):
                 for cav_num in range(1, 9):
                     cm_prefix = f"ACCL:{linac_name}:{cm_name}"
                     cav_prefix = cm_prefix + f"{cav_num}0:"
+                    cryo_prefix = f"CTE:CM{cm_name}:1{cav_num}"
 
                     cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
@@ -506,6 +523,9 @@ class CavityService(Service):
                     self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(CouplerVacuumPVGroup(prefix=cm_prefix + "10:"))
                     self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
+                    self.add_pvs(HOMPVGroup(prefix=cryo_prefix))
+
+        self["ACCL:L2B:1400:RACKA:HWINITSUM"].write(3, severity=AlarmSeverity.INVALID_ALARM)
 
 
 def main():
