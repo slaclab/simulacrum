@@ -16,6 +16,11 @@ class CryomodulePVGroup(PVGroup):
     bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.INT)
 
 
+class CryoPVGroup(PVGroup):
+    uhl = pvproperty(value=0, name="LVL.SEVR", dtype=ChannelType.ENUM,
+                     enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
+
+
 class HOMPVGroup(PVGroup):
     upstreamHOM = pvproperty(value=0, name="18:UH:TEMP.SEVR", dtype=ChannelType.ENUM,
                              enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
@@ -268,7 +273,7 @@ class CavityPVGroup(PVGroup):
                                                 enum_strings=("Off", "On"),
                                                 read_only=False)
     # Defaults to pulse
-    rf_mode_act: PvpropertyEnumRO = pvproperty(value=4, name='RFMODE',
+    rf_mode_act: PvpropertyEnumRO = pvproperty(value=0, name='RFMODE',
                                                dtype=ChannelType.ENUM,
                                                enum_strings=("SELAP", "SELA",
                                                              "SEL", "SEL Raw",
@@ -503,7 +508,8 @@ class CavityService(Service):
                 for cav_num in range(1, 9):
                     cm_prefix = f"ACCL:{linac_name}:{cm_name}"
                     cav_prefix = cm_prefix + f"{cav_num}0:"
-                    cryo_prefix = f"CTE:CM{cm_name}:1{cav_num}"
+                    HOM_prefix = f"CTE:CM{cm_name}:1{cav_num}"
+                    cryo_prefix = f"CLL:CM{cm_name}:2601:US:"
 
                     cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
@@ -525,7 +531,8 @@ class CavityService(Service):
                     self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(CouplerVacuumPVGroup(prefix=cm_prefix + "10:"))
                     self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
-                    self.add_pvs(HOMPVGroup(prefix=cryo_prefix))
+                    self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
+                    self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
 
         self["ACCL:L2B:1400:RACKA:HWINITSUM"].write(3, severity=AlarmSeverity.INVALID_ALARM)
 
