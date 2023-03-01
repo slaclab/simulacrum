@@ -1,7 +1,7 @@
 from asyncio import get_event_loop, sleep
 from random import random, randrange, uniform
 
-from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType, AlarmSeverity
+from caproto import AlarmSeverity, ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
 from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar, PvpropertyEnum,
                             PvpropertyEnumRO, PvpropertyFloat, PvpropertyFloatRO, PvpropertyInteger, PvpropertyString,
                             ioc_arg_parser, pvproperty, run)
@@ -169,10 +169,14 @@ class StepperPVGroup(PVGroup):
 
 
 class PiezoPVGroup(PVGroup):
-    enable = pvproperty(name="ENABLE")
+    enable: PvpropertyEnum = pvproperty(name="ENABLE")
+    enable_stat = pvproperty(name="ENABLESTAT", dtype=ChannelType.ENUM,
+                             value=1, enum_strings=("Disabled", "Enabled"))
     feedback_mode = pvproperty(value=1, name="MODECTRL",
                                dtype=ChannelType.ENUM,
                                enum_strings=("Manual", "Feedback"))
+    mode_stat = pvproperty(name="MODESTAT", value=1, dtype=ChannelType.ENUM,
+                           enum_strings=("Manual", "Feedback"))
     dc_setpoint = pvproperty(name="DAC_SP")
     bias_voltage = pvproperty(name="BIAS")
     prerf_test_start = pvproperty(name="TESTSTRT")
@@ -405,7 +409,7 @@ class CavityPVGroup(PVGroup):
     
     ssa_overrange: PvpropertyInteger = pvproperty(value=0, name="ASETSUB.VALQ",
                                                   dtype=ChannelType.INT)
-
+    
     def __init__(self, prefix, isHL: bool):
         super().__init__(prefix)
         
@@ -503,6 +507,8 @@ class SSAPVGroup(PVGroup):
                                             dtype=ChannelType.FLOAT)
     drive_max_save: PvpropertyFloat = pvproperty(name="DRV_MAX_SAVE", value=0.8,
                                                  dtype=ChannelType.FLOAT)
+    power: PvpropertyFloat = pvproperty(name="CALPWR", value=4000,
+                                        dtype=ChannelType.FLOAT)
     
     nirp: PvpropertyEnum = pvproperty(value=1, name="NRP_PRMT",
                                       dtype=ChannelType.ENUM,
@@ -511,7 +517,7 @@ class SSAPVGroup(PVGroup):
                                            dtype=ChannelType.ENUM,
                                            enum_strings=("NO_ALARM", "MINOR",
                                                          "MAJOR", "INVALID"))
-
+    
     def __init__(self, prefix, cavityGroup: CavityPVGroup):
         
         super().__init__(prefix)
@@ -617,7 +623,7 @@ class CavityService(Service):
                     
                     HOM_prefix = f"CTE:CM{cm_name}:1{cav_num}"
                     cryo_prefix = f"CLL:CM{cm_name}:2601:US:"
-
+                    
                     cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
                     self.add_pvs(SSAPVGroup(prefix=cav_prefix + "SSA:",
@@ -643,7 +649,7 @@ class CavityService(Service):
                     self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
                     self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
-
+        
         self["ACCL:L2B:1400:RACKA:HWINITSUM"].write(3, severity=AlarmSeverity.INVALID_ALARM)
 
 
