@@ -405,12 +405,6 @@ class CavityPVGroup(PVGroup):
                                                               "Complete",
                                                               "Running"))
     
-    # time_waveform = pvproperty(name="CAV:FLTTWF",
-    #                            value=np.linspace(start=-0.2, stop=0.2, num=2800),
-    #                            dtype=ChannelType.D)
-    # decay_waveform = pvproperty(name="DECAYREFWF", value=np.zeros(2800))
-    # cav_waveform = pvproperty(name="CAV:FLTAWF", value=np.zeros(2800))
-    
     ssa_overrange: PvpropertyInteger = pvproperty(value=0, name="ASETSUB.VALQ",
                                                   dtype=ChannelType.INT)
     
