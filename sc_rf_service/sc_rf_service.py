@@ -175,8 +175,8 @@ class PiezoPVGroup(PVGroup):
     feedback_mode = pvproperty(value=1, name="MODECTRL",
                                dtype=ChannelType.ENUM,
                                enum_strings=("Manual", "Feedback"))
-    mode_stat = pvproperty(name="MODESTAT", value=1, dtype=ChannelType.ENUM,
-                           enum_strings=("Manual", "Feedback"))
+    feedback_mode_stat = pvproperty(name="MODESTAT", value=1, dtype=ChannelType.ENUM,
+                                    enum_strings=("Manual", "Feedback"))
     dc_setpoint = pvproperty(name="DAC_SP")
     bias_voltage = pvproperty(name="BIAS")
     prerf_test_start = pvproperty(name="TESTSTRT")
@@ -216,6 +216,10 @@ class PiezoPVGroup(PVGroup):
         await self.prerf_test_status.write("Running")
         await sleep(5)
         await self.prerf_test_status.write("Complete")
+    
+    @feedback_mode.putter
+    async def feedback_mode(self, instance, value):
+        await self.feedback_mode_stat.write(value)
 
 
 class CavFaultPVGroup(PVGroup):
