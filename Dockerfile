@@ -1,9 +1,12 @@
 FROM ubuntu:18.04 as sim_builder
 ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && \
-    apt-get -y install build-essential xterm man wget readline-common libreadline-dev sudo unzip \
-                       cmake autoconf automake libtool m4 gfortran libtool-bin xorg xorg-dev bc \
+    apt-get -y install build-essential libssl-dev xterm man wget readline-common libreadline-dev sudo unzip \
+                       autoconf automake libtool m4 gfortran libtool-bin xorg xorg-dev bc \
                        libopenmpi-dev gfortran-multilib curl
+RUN wget https://cmake.org/files/v3.18/cmake-3.18.4.tar.gz && tar -xvzf cmake-3.18.4.tar.gz
+WORKDIR ./cmake-3.18.4
+RUN ./bootstrap && make && make install
 WORKDIR /tmp
 SHELL ["/bin/bash", "-c"]
 RUN curl https://www.classe.cornell.edu/~cesrulib/downloads/tarballs/ | sed -n 's/.*href="\([^"]*\)\.tgz.*/\1/p' > /bmad_filename.txt
@@ -25,6 +28,7 @@ RUN cd /bmad && \
     sed -i '/export PACKAGE_VERSION=/a source .\/VERSION' /bmad/openmpi/acc_build_openmpi
 
 WORKDIR /bmad
+RUN apt-get -y install libpango1.0-dev
 RUN source ./bmad_env.bash && ./util/dist_build_production
 
 FROM ubuntu:18.04
