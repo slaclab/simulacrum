@@ -39,7 +39,8 @@ COPY model_service /model_service
 COPY start_all_services.bash /start_all_services.bash
 ENV TAO_LIB /tao/libtao.so
 COPY --from=sim_builder /bmad/production/lib/libtao.so ${TAO_LIB}
-COPY --from=sim_builder /bmad/tao/python/pytao /model_service/pytao
+# COPY --from=sim_builder /bmad/tao/python/pytao /model_service/pytao
+RUN pip3 install pytao
 SHELL ["/bin/bash", "-c"]
 COPY . /simulacrum
 RUN cd /simulacrum && pip3 install . 
