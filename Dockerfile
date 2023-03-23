@@ -40,12 +40,14 @@ COPY start_all_services.bash /start_all_services.bash
 ENV TAO_LIB /tao/libtao.so
 COPY --from=sim_builder /bmad/production/lib/libtao.so ${TAO_LIB}
 # COPY --from=sim_builder /bmad/tao/python/pytao /model_service/pytao
-RUN pip3 install pytao
+RUN pip3 install pytao pyepics
 SHELL ["/bin/bash", "-c"]
 COPY . /simulacrum
 RUN cd /simulacrum && pip3 install . 
 COPY bpm_service /bpm_service
 COPY magnet_service /magnet_service
+RUN apt-get -y install git
+RUN git clone https://github.com/slaclab/lcls-tools.git && cd ./lcls-tools && python3 setup.py install
 ENV MODEL_PORT 12312
 ENV ORBIT_PORT 56789
 ENV EPICS_CA_SERVER_PORT 5064
