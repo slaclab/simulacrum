@@ -48,10 +48,12 @@ COPY bpm_service /bpm_service
 COPY magnet_service /magnet_service
 RUN apt-get -y install git
 RUN git clone https://github.com/slaclab/lcls-tools.git && cd ./lcls-tools && python3 setup.py install
+RUN cd / && git clone https://github.com/slaclab/lcls-classic-lattice.git 
 ENV MODEL_PORT 12312
 ENV ORBIT_PORT 56789
 ENV EPICS_CA_SERVER_PORT 5064
 ENV EPICS_CA_REPEATER_PORT 5065
+ENV LCLS_CLASSIC_LATTICE /lcls-classic-lattice
 EXPOSE ${MODEL_PORT}
 EXPOSE ${ORBIT_PORT}
 EXPOSE ${EPICS_CA_SERVER_PORT}
