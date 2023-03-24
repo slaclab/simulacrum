@@ -32,7 +32,7 @@ RUN apt-get -y install libpango1.0-dev
 RUN source ./bmad_env.bash && ./util/dist_build_production
 
 FROM ubuntu:18.04
-RUN apt-get update && apt-get -y install readline-common python3 python3-pip libzmq5 libx11-6 gfortran
+RUN apt-get update && apt-get -y install readline-common python3 python3-pip libzmq5 libx11-6 gfortran libpango1.0-dev
 RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN pip3 install numpy caproto pyzmq
 COPY model_service /model_service
