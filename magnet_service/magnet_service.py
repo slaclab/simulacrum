@@ -253,7 +253,7 @@ class MagnetService(simulacrum.Service):
         
         # Now that we've set up all the magnets, we need to send the model a
         # command to use non-normalized magnetic field units.
-        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "set ele Hkicker::*,Vkicker::*Quadrupole::*,Sbend::*,Multipole::* field_master = T"})
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "set ele Hkicker::*,Vkicker::*,Quadrupole::*,Sbend::*,Multipole::* field_master = T"})
         self.cmd_socket.recv_pyobj()
         L.info("Initialization complete.")
         
