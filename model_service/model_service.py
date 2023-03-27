@@ -330,6 +330,7 @@ class ModelService:
                     retval = self.tao_cmd(p['val'])
                     await s.send_pyobj({'status': 'ok', 'result': retval})
                 except Exception as e:
+                    L.error("Tao command failed: {}".format(e))
                     await s.send_pyobj({'status': 'fail', 'err': e})
             elif p['cmd'] == 'send_orbit':
                 self.model_changed() #Sets the flag that will cause an orbit broadcast
@@ -350,6 +351,7 @@ class ModelService:
                     results = self.tao_batch(p['val'])
                     await s.send_pyobj({'status': 'ok', 'result': results})
                 except Exception as e:
+                    L.error("Tao batch command failed: {}".format(e))
                     await s.send_pyobj({'status': 'fail', 'err': e})
 
 def _orbit_array_from_text(text):
