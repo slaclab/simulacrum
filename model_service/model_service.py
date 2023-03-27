@@ -223,8 +223,7 @@ class ModelService:
         y_orb_text = self.tao_cmd("show data orbit.y")[3:-2]
         y_orb = _orbit_array_from_text(y_orb_text)
         #Get e_tot, which we use to see if the single particle beam is dead
-        e_text = self.tao_cmd("show data orbit.e")[3:-2]
-        e = _orbit_array_from_text(e_text)
+        e =  np.array([float(self.tao_cmd(f'python ele:param {bpm}|model e_tot')[0].split(';')[3]) for bpm in self.bpms])
         end_time = time.time()
         L.debug("get_orbit took %f seconds", end_time-start_time)
         return np.stack((x_orb, y_orb, e))
