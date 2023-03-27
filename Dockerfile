@@ -1,12 +1,17 @@
 FROM ubuntu:18.04 as sim_builder
 ENV DEBIAN_FRONTEND noninteractive
+### APT GET DEPENDENCIES FOR BMAD/TAO BUILD
 RUN apt-get update && \
     apt-get -y install build-essential libssl-dev xterm man wget readline-common libreadline-dev sudo unzip \
                        autoconf automake libtool m4 gfortran libtool-bin xorg xorg-dev bc \
-                       libopenmpi-dev gfortran-multilib curl
+                       libopenmpi-dev gfortran-multilib curl libpango1.0-dev
+### BUILD CMAKE FROM SOURCE
 RUN wget https://cmake.org/files/v3.18/cmake-3.18.4.tar.gz && tar -xvzf cmake-3.18.4.tar.gz
 WORKDIR ./cmake-3.18.4
 RUN ./bootstrap && make && make install
+### CLEAN UP CMAKE TO SAVE SPACE
+RUN cd / && rm -rf cmake-3.18.4
+### BMAD/TAO CONFIGURATION AND BUILD
 WORKDIR /tmp
 SHELL ["/bin/bash", "-c"]
 RUN curl https://www.classe.cornell.edu/~cesrulib/downloads/tarballs/ | sed -n 's/.*href="\([^"]*\)\.tgz.*/\1/p' > /bmad_filename.txt
@@ -28,27 +33,28 @@ RUN cd /bmad && \
     sed -i '/export PACKAGE_VERSION=/a source .\/VERSION' /bmad/openmpi/acc_build_openmpi
 
 WORKDIR /bmad
-RUN apt-get -y install libpango1.0-dev
 RUN source ./bmad_env.bash && ./util/dist_build_production
 
 FROM ubuntu:18.04
-RUN apt-get update && apt-get -y install readline-common python3 python3-pip libzmq5 libx11-6 gfortran libpango1.0-dev
+### APT GET DEPENDENCIES FOR SIMULACRUM SERVICES
+RUN apt-get update && apt-get -y install readline-common python3 python3-pip libzmq5 libx11-6 gfortran libpango1.0-dev git
 RUN ln -s /usr/bin/python3 /usr/bin/python
-RUN pip3 install numpy caproto pyzmq
+### INSTALL PYTHON PACKAGES USING PIP AND GIT
+RUN pip3 install numpy caproto pyzmq pytao pyepics scipy
+RUN git clone https://github.com/slaclab/lcls-tools.git && cd ./lcls-tools && python3 setup.py install
+RUN cd / && git clone https://github.com/slaclab/lcls-classic-lattice.git
+### COPY OVER ANY SERVICES/SCRIPTS FROM SIMULACRUM REPO
 COPY model_service /model_service
 COPY start_all_services.bash /start_all_services.bash
-ENV TAO_LIB /tao/libtao.so
-COPY --from=sim_builder /bmad/production/lib/libtao.so ${TAO_LIB}
-# COPY --from=sim_builder /bmad/tao/python/pytao /model_service/pytao
-RUN pip3 install pytao pyepics
-SHELL ["/bin/bash", "-c"]
-COPY . /simulacrum
-RUN cd /simulacrum && pip3 install . 
 COPY bpm_service /bpm_service
 COPY magnet_service /magnet_service
-RUN apt-get -y install git
-RUN git clone https://github.com/slaclab/lcls-tools.git && cd ./lcls-tools && python3 setup.py install
-RUN cd / && git clone https://github.com/slaclab/lcls-classic-lattice.git 
+COPY --from=sim_builder /bmad/production/lib/libtao.so /tao/${TAO_LIB}
+COPY . /simulacrum
+### SETUP FOR SIMULACRUM
+ENV TAO_LIB /tao/libtao.so
+# COPY --from=sim_builder /bmad/tao/python/pytao /model_service/pytao
+SHELL ["/bin/bash", "-c"]
+RUN cd /simulacrum && pip3 install . 
 ENV MODEL_PORT 12312
 ENV ORBIT_PORT 56789
 ENV EPICS_CA_SERVER_PORT 5064
