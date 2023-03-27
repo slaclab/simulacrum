@@ -64,8 +64,13 @@ class BPMService(simulacrum.Service):
         return orbit
     
     def fetch_bpm_list(self):
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show data orbit.x"})
+        orbit_bpms = [row.split()[3] for row in self.cmd_socket.recv_pyobj()['result'][3:-2]]
         self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele BPM*,RFB*,CMB*"})
-        bpms = [row.split(None, 3)[1:3] for row in self.cmd_socket.recv_pyobj()['result'][:-1]]
+        # filter bpms to use only devices in the 'orbit' datum
+        bpms = []
+        for bpm in [row.split(None, 3)[1:3] for row in self.cmd_socket.recv_pyobj()['result'][:-1]]:
+            if bpm[0] in orbit_bpms: bpms.append(bpm)
         return bpms
     
     async def publish_z(self):
