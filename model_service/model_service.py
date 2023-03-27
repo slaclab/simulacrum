@@ -227,6 +227,14 @@ class ModelService:
         L.debug("get_orbit took %f seconds", end_time-start_time)
         return np.stack((x_orb, y_orb, e))
 
+    def get_screens(self):
+        screen_elements = self.tao_cmd('show ele monitor::YAG*,monitor::OTR*')[:-1]
+        zs = [float(row.split()[2]) for row in screen_elements]
+        names = [row.split()[1] for row in screen_elements]
+        return np.sort(np.array(
+            [(z, name) for z, name in zip(zs, names)],
+            dtype=[('z', 'float32'), ('ele', 'U60')]), order='z')
+
     def get_prof_orbit(self):
         #Get X Orbit
         x_orb_text = self.tao_cmd("show data orbit.profx")[3:-2]
