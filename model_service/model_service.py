@@ -237,12 +237,10 @@ class ModelService:
             dtype=[('z', 'float32'), ('ele', 'U60')]), order='z')
 
     def get_prof_orbit(self):
-        #Get X Orbit
-        x_orb_text = self.tao_cmd("show data orbit.profx")[3:-2]
-        x_orb = _orbit_array_from_text(x_orb_text)
-        #Get Y Orbit
-        y_orb_text = self.tao_cmd("show data orbit.profy")[3:-2]
-        y_orb = _orbit_array_from_text(y_orb_text)
+        # get x,y positions at each screen
+        orbs = [self.tao_cmd(f'python ele:orbit {screen}|model') for _,screen in self.screens]
+        x_orb = np.array([float(orb[0].split(';')[3]) for orb in orbs])*1e3
+        y_orb = np.array([float(orb[2].split(';')[3]) for orb in orbs])*1e3
         return np.stack((x_orb, y_orb))
     
     def get_twiss(self):
