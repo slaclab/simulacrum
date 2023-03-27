@@ -208,6 +208,9 @@ class ModelService:
         self.recalc_needed = True
         self.pva_needs_refresh = True
         self.need_zmq_broadcast = True
+
+    def get_bpms(self):
+        return [row.split()[3] for row in self.tao_cmd("show data orbit.x")[3:-2]]
     
     def get_orbit(self):
         start_time = time.time()
