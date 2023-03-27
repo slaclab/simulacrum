@@ -244,11 +244,11 @@ class ModelService:
         return np.stack((x_orb, y_orb))
     
     def get_twiss(self):
-        twiss_text = self.tao_cmd("show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b UNDSTART")
-        if "ERROR" in twiss_text[0]:
-            twiss_text = self.tao_cmd("show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b BEGUNDH")
-        if "ERROR" in twiss_text[0]:
-            twiss_text = self.tao_cmd("show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b BEGUNDS")
+        if   self.name in ['CU_HXR', 'SC_HXR']: und_start = 'BEGUNDH'
+        elif self.name in ['CU_SXR', 'SC_SXR']: und_start = 'BEGUNDS'
+        elif self.name == 'LCLS_CLASSIC': und_start = 'UNDSTART'
+        else: und_start = 'BEGINNING'
+        twiss_text = self.tao_cmd(f"show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b {und_start}")
         #format to list of comma separated values
         #msg='twiss from get_twiss: {}'.format(twiss_text)
         #L.info(msg)
