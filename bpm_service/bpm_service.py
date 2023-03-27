@@ -119,16 +119,21 @@ class BPMService(simulacrum.Service):
                 await self[row['device_name']+":Y"].write(row['y'], severity=severity, timestamp=ts)
                 await self[row['device_name']+":TMIT"].write(row['tmit'], timestamp=ts)
     
+    async def orbit_broadcast(self, async_lib):
+        """
+        'startup_hook' coroutine, listens for orbit broadcast from model
+        'async_lib' arg is a requirement of caproto so that 'startup_hook' is library-agnostic
+        but this method only works for asyncio
+        """
+        await self.publish_z()
+        loop = asyncio.get_running_loop()
+        loop.call_soon(self.request_orbit)
+        loop.create_task(self.recv_orbit_array())
+
 def main():
     service = BPMService()
-    loop = asyncio.get_event_loop()
-    _, run_options = ioc_arg_parser(
-        default_prefix='',
-        desc="Simulated BPM Service")
-    loop.create_task(service.publish_z())
-    loop.create_task(service.recv_orbit_array())
-    loop.call_soon(service.request_orbit)
-    run(service, **run_options)
+    _, run_options = ioc_arg_parser(default_prefix='', desc="Simulated BPM Service")
+    run(service, **run_options, startup_hook=service.orbit_broadcast)
     
 if __name__ == '__main__':
     main()
