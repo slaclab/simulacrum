@@ -87,9 +87,8 @@ class BPMService(simulacrum.Service):
         while True:
             L.debug("Checking for new orbit data.")
             md = await model_broadcast_socket.recv_pyobj(flags=flags)
-            msg="Orbit data incoming: {}".format(md)
-            L.debug(msg)
             if md.get("tag", None) == "orbit":
+                L.debug(f"Orbit data incoming: {md}")
                 msg = await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
                 L.debug(msg)
                 buf = memoryview(msg)
