@@ -68,6 +68,8 @@ class ModelService:
         self.design_rmat_pv = SharedPV(nt=self.rmat_table, 
                            initial=initial_rmat_table,
                            loop=self.loop)
+        self.screens = self.get_screens()
+        self.bpms = self.get_bpms()
         self.recalc_needed = False
         self.pva_needs_refresh = False
         self.need_zmq_broadcast = False
