@@ -31,7 +31,7 @@ class BPMService(simulacrum.Service):
         self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
         bpms = self.fetch_bpm_list()
         device_names = [simulacrum.util.convert_element_to_device(bpm[0]) for bpm in bpms]
-        print(device_names)
+        L.debug(device_names)
         device_name_map = zip(bpms, device_names)
         bpm_pvs = {device_name: BPMPV(prefix=device_name) for device_name in device_names if device_name}
         self.add_pvs(bpm_pvs)
@@ -40,17 +40,16 @@ class BPMService(simulacrum.Service):
             if pv.endswith(":X") or pv.endswith(":Y") or pv.endswith(":TMIT"):
                 one_hertz_aliases["{}1H".format(pv)] = self[pv]
         self.update(one_hertz_aliases)
-        self.orbit = self.initialize_orbit()
+        self.orbit = self.initialize_orbit(bpms)
         L.info("Initialization complete.")
     
-    def initialize_orbit(self):
+    def initialize_orbit(self, bpms):
         # First, get the list of BPMs and their Z locations from the model service
         # This is maybe brittle because we use Tao's "show" command, then parse
         # the results, which the Tao authors advise against because the format of the 
         # results might change.  Oh well, I can't figure out a better way to do it.
         # TODO: use tao python command instead.
         L.info("Initializing with data from model service.")
-        bpms = self.fetch_bpm_list()
         orbit = np.zeros(len(bpms), dtype=[('element_name', 'U60'), ('device_name', 'U60'), ('x', 'float32'), ('y', 'float32'), ('tmit', 'float32'), ('alive', 'bool'), ('z', 'float32')])
         for i, row in enumerate(bpms):
             (name, z) = row
@@ -64,8 +63,13 @@ class BPMService(simulacrum.Service):
         return orbit
     
     def fetch_bpm_list(self):
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show data orbit.x"})
+        orbit_bpms = [row.split()[3] for row in self.cmd_socket.recv_pyobj()['result'][3:-2]]
         self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show ele BPM*,RFB*,CMB*"})
-        bpms = [row.split(None, 3)[1:3] for row in self.cmd_socket.recv_pyobj()['result'][:-1]]
+        # filter bpms to use only devices in the 'orbit' datum
+        bpms = []
+        for bpm in [row.split(None, 3)[1:3] for row in self.cmd_socket.recv_pyobj()['result'][:-1]]:
+            if bpm[0] in orbit_bpms: bpms.append(bpm)
         return bpms
     
     async def publish_z(self):
@@ -87,9 +91,8 @@ class BPMService(simulacrum.Service):
         while True:
             L.debug("Checking for new orbit data.")
             md = await model_broadcast_socket.recv_pyobj(flags=flags)
-            msg="Orbit data incoming: {}".format(md)
-            L.debug(msg)
             if md.get("tag", None) == "orbit":
+                L.debug(f"Orbit data incoming: {md}")
                 msg = await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
                 L.debug(msg)
                 buf = memoryview(msg)
@@ -116,16 +119,21 @@ class BPMService(simulacrum.Service):
                 await self[row['device_name']+":Y"].write(row['y'], severity=severity, timestamp=ts)
                 await self[row['device_name']+":TMIT"].write(row['tmit'], timestamp=ts)
     
+    async def orbit_broadcast(self, async_lib):
+        """
+        'startup_hook' coroutine, listens for orbit broadcast from model
+        'async_lib' arg is a requirement of caproto so that 'startup_hook' is library-agnostic
+        but this method only works for asyncio
+        """
+        await self.publish_z()
+        loop = asyncio.get_running_loop()
+        loop.call_soon(self.request_orbit)
+        loop.create_task(self.recv_orbit_array())
+
 def main():
     service = BPMService()
-    loop = asyncio.get_event_loop()
-    _, run_options = ioc_arg_parser(
-        default_prefix='',
-        desc="Simulated BPM Service")
-    loop.create_task(service.publish_z())
-    loop.create_task(service.recv_orbit_array())
-    loop.call_soon(service.request_orbit)
-    run(service, **run_options)
+    _, run_options = ioc_arg_parser(default_prefix='', desc="Simulated BPM Service")
+    run(service, **run_options, startup_hook=service.orbit_broadcast)
     
 if __name__ == '__main__':
     main()
