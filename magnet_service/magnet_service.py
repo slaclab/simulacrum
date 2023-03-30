@@ -230,7 +230,7 @@ def bend_b_field_to_BACT(b_field, l):
     return -b_field*.11028748186*l
 
 class MagnetService(simulacrum.Service):
-    attr_for_mag_type = {"XCOR": "bl_hkick", "YCOR": "bl_vkick", "QUAD": "b1_gradient", "BEND": "b_field"}
+    attr_for_mag_type = {"XCOR": "bl_kick", "YCOR": "bl_kick", "QUAD": "b1_gradient", "BEND": "b_field"}
     conversion_to_BMAD_for_mag_type = {"XCOR": BACT_to_bl_kick, "YCOR": BACT_to_bl_kick, "QUAD": quad_BACT_to_gradient, "BEND": bend_BACT_to_b_field}
     def __init__(self):
         super().__init__()
@@ -253,7 +253,7 @@ class MagnetService(simulacrum.Service):
         
         # Now that we've set up all the magnets, we need to send the model a
         # command to use non-normalized magnetic field units.
-        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "set ele Hkicker::*,Vkicker::*Quadrupole::*,Sbend::*,Multipole::* field_master = T"})
+        self.cmd_socket.send_pyobj({"cmd": "tao", "val": "set ele Hkicker::*,Vkicker::*,Quadrupole::*,Sbend::*,Multipole::* field_master = T"})
         self.cmd_socket.recv_pyobj()
         L.info("Initialization complete.")
         
