@@ -8,19 +8,31 @@ from caproto import AlarmStatus, AlarmSeverity
 import simulacrum
 import zmq
 from zmq.asyncio import Context
+from collections import deque
 
 #set up python logger
 L = simulacrum.util.SimulacrumLog(os.path.splitext(os.path.basename(__file__))[0], level='INFO')
 
+HIST_BUF_SIZE = 2800
 
 class BPMPV(PVGroup):
     x = pvproperty(value=0.0, name=':X', read_only=True, record='ai',
                    upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+    x_hst = pvproperty(value=0.0, name=':XHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+
     y = pvproperty(value=0.0, name=':Y', read_only=True, record='ai',
                    upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+    y_hst = pvproperty(value=0.0, name=':YHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+
     tmit = pvproperty(value=0.0, name=':TMIT', read_only=True, record='ai',
                    upper_disp_limit=1.0e10, lower_disp_limit=0)
+    tmit_hst = pvproperty(value=0.0, name=':TMITHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+                          upper_disp_limit=1.0e10, lower_disp_limit=0)
+
     z = pvproperty(value=0.0, name=':Z', read_only=True, precision=2, units='m')
+
     
 class BPMService(simulacrum.Service):
     def __init__(self):
@@ -41,6 +53,7 @@ class BPMService(simulacrum.Service):
                 one_hertz_aliases["{}1H".format(pv)] = self[pv]
         self.update(one_hertz_aliases)
         self.orbit = self.initialize_orbit(bpms)
+        self.history = self.initialize_history_buffers(bpms)
         L.info("Initialization complete.")
     
     def initialize_orbit(self, bpms):
@@ -61,6 +74,21 @@ class BPMService(simulacrum.Service):
             orbit['z'][i] = float(z)
         orbit = np.sort(orbit,order='z')
         return orbit
+
+    def initialize_history_buffers(self, bpms):
+        """
+        construct self.history ring buffers for X, Y and TMIT
+        We'll need 3 * N_bpms buffers!
+        """
+        L.info("Initializing history buffers.")
+        x_history, y_history, tmit_history = [], [], []
+        all_nans = np.full((HIST_BUF_SIZE,), np.nan)
+        for i in range(len(bpms)):
+            x_history.append(deque(all_nans, maxlen=HIST_BUF_SIZE))
+            y_history.append(deque(all_nans, maxlen=HIST_BUF_SIZE))
+            tmit_history.append(deque(all_nans, maxlen=HIST_BUF_SIZE))
+
+        return [x_history, y_history, tmit_history]
     
     def fetch_bpm_list(self):
         self.cmd_socket.send_pyobj({"cmd": "tao", "val": "show data orbit.x"})
@@ -105,20 +133,29 @@ class BPMService(simulacrum.Service):
                 await self.publish_orbit()
             else: 
                 await model_broadcast_socket.recv(flags=flags, copy=copy, track=track)
-                 
-            
+
     async def publish_orbit(self):
         ts = time.time()
-        for row in self.orbit:
-            if row['device_name']+":X" in self:
-                if not row['alive']:
-                    severity = AlarmSeverity.INVALID_ALARM
-                else:
-                    severity = AlarmSeverity.NO_ALARM
-                await self[row['device_name']+":X"].write(row['x'], severity=severity, timestamp=ts)
-                await self[row['device_name']+":Y"].write(row['y'], severity=severity, timestamp=ts)
-                await self[row['device_name']+":TMIT"].write(row['tmit'], timestamp=ts)
-    
+        for i, row in enumerate(self.orbit):
+            if row['device_name']+":X" not in self: continue
+
+            if not row['alive']:
+                severity = AlarmSeverity.INVALID_ALARM
+            else:
+                severity = AlarmSeverity.NO_ALARM
+
+            # update history buffers
+            self.history[0][i].appendleft(row['x'])
+            self.history[1][i].appendleft(row['y'])
+            self.history[2][i].appendleft(row['tmit'])
+
+            await self[row['device_name']+":X"].write(row['x'], severity=severity, timestamp=ts)
+            await self[row['device_name']+":Y"].write(row['y'], severity=severity, timestamp=ts)
+            await self[row['device_name']+":TMIT"].write(row['tmit'], timestamp=ts)
+            await self[row['device_name']+":XHSTBR"].write(list(self.history[0][i]), severity=severity, timestamp=ts)
+            await self[row['device_name']+":YHSTBR"].write(list(self.history[1][i]), severity=severity, timestamp=ts)
+            await self[row['device_name']+":TMITHSTBR"].write(list(self.history[2][i]), timestamp=ts)
+
     async def orbit_broadcast(self, async_lib):
         """
         'startup_hook' coroutine, listens for orbit broadcast from model
