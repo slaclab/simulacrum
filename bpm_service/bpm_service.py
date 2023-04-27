@@ -18,17 +18,29 @@ HIST_BUF_SIZE = 2800
 class BPMPV(PVGroup):
     x = pvproperty(value=0.0, name=':X', read_only=True, record='ai',
                    upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
-    x_hst = pvproperty(value=0.0, name=':XHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+    x_hstbr = pvproperty(value=0.0, name=':XHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+    x_hst1 = pvproperty(value=0.0, name=':XHST1', max_length=HIST_BUF_SIZE, read_only=True,
+                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+    x_hst2 = pvproperty(value=0.0, name=':XHST2', max_length=HIST_BUF_SIZE, read_only=True,
                        upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
 
     y = pvproperty(value=0.0, name=':Y', read_only=True, record='ai',
                    upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
-    y_hst = pvproperty(value=0.0, name=':YHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+    y_hstbr = pvproperty(value=0.0, name=':YHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+    y_hst1 = pvproperty(value=0.0, name=':YHST1', max_length=HIST_BUF_SIZE, read_only=True,
+                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+    y_hst2 = pvproperty(value=0.0, name=':YHST2', max_length=HIST_BUF_SIZE, read_only=True,
                        upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
 
     tmit = pvproperty(value=0.0, name=':TMIT', read_only=True, record='ai',
                    upper_disp_limit=1.0e10, lower_disp_limit=0)
-    tmit_hst = pvproperty(value=0.0, name=':TMITHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+    tmit_hstbr = pvproperty(value=0.0, name=':TMITHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
+                          upper_disp_limit=1.0e10, lower_disp_limit=0)
+    tmit_hst1 = pvproperty(value=0.0, name=':TMITHST1', max_length=HIST_BUF_SIZE, read_only=True,
+                          upper_disp_limit=1.0e10, lower_disp_limit=0)
+    tmit_hst2 = pvproperty(value=0.0, name=':TMITHST2', max_length=HIST_BUF_SIZE, read_only=True,
                           upper_disp_limit=1.0e10, lower_disp_limit=0)
 
     z = pvproperty(value=0.0, name=':Z', read_only=True, precision=2, units='m')
@@ -144,17 +156,33 @@ class BPMService(simulacrum.Service):
             else:
                 severity = AlarmSeverity.NO_ALARM
 
-            # update history buffers
-            self.history[0][i].appendleft(row['x'])
-            self.history[1][i].appendleft(row['y'])
-            self.history[2][i].appendleft(row['tmit'])
-
             await self[row['device_name']+":X"].write(row['x'], severity=severity, timestamp=ts)
             await self[row['device_name']+":Y"].write(row['y'], severity=severity, timestamp=ts)
             await self[row['device_name']+":TMIT"].write(row['tmit'], timestamp=ts)
-            await self[row['device_name']+":XHSTBR"].write(list(self.history[0][i]), severity=severity, timestamp=ts)
-            await self[row['device_name']+":YHSTBR"].write(list(self.history[1][i]), severity=severity, timestamp=ts)
-            await self[row['device_name']+":TMITHSTBR"].write(list(self.history[2][i]), timestamp=ts)
+
+            # update history buffers
+            self.history[0][i].append(row['x'])
+            self.history[1][i].append(row['y'])
+            self.history[2][i].append(row['tmit'])
+
+            x_hst = list(self.history[0][i])
+            y_hst = list(self.history[1][i])
+            tmit_hst = list(self.history[2][i])
+
+            # 'HST1' and 'HST2' are simple duplicates of the 'HSTBR' buffer to reduce memory cost
+            # no simulated timing anyways, so custom EDEFs aren't meaningful
+
+            await self[row['device_name']+":XHSTBR"].write(x_hst, severity=severity, timestamp=ts)
+            await self[row['device_name']+":XHST1"].write(x_hst, severity=severity, timestamp=ts)
+            await self[row['device_name']+":XHST2"].write(x_hst, severity=severity, timestamp=ts)
+
+            await self[row['device_name']+":YHSTBR"].write(y_hst, severity=severity, timestamp=ts)
+            await self[row['device_name']+":YHST1"].write(y_hst, severity=severity, timestamp=ts)
+            await self[row['device_name']+":YHST2"].write(y_hst, severity=severity, timestamp=ts)
+
+            await self[row['device_name']+":TMITHSTBR"].write(tmit_hst, timestamp=ts)
+            await self[row['device_name']+":TMITHST1"].write(tmit_hst, timestamp=ts)
+            await self[row['device_name']+":TMITHST2"].write(tmit_hst, timestamp=ts)
 
     async def orbit_broadcast(self, async_lib):
         """
