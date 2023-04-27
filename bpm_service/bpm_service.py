@@ -9,6 +9,7 @@ import simulacrum
 import zmq
 from zmq.asyncio import Context
 from collections import deque
+from functools import partial
 
 #set up python logger
 L = simulacrum.util.SimulacrumLog(os.path.splitext(os.path.basename(__file__))[0], level='INFO')
@@ -16,32 +17,38 @@ L = simulacrum.util.SimulacrumLog(os.path.splitext(os.path.basename(__file__))[0
 HIST_BUF_SIZE = 2800
 
 class BPMPV(PVGroup):
-    x = pvproperty(value=0.0, name=':X', read_only=True, record='ai',
-                   upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
-    x_hstbr = pvproperty(value=0.0, name=':XHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
-                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
-    x_hst1 = pvproperty(value=0.0, name=':XHST1', max_length=HIST_BUF_SIZE, read_only=True,
-                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
-    x_hst2 = pvproperty(value=0.0, name=':XHST2', max_length=HIST_BUF_SIZE, read_only=True,
-                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
 
-    y = pvproperty(value=0.0, name=':Y', read_only=True, record='ai',
-                   upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
-    y_hstbr = pvproperty(value=0.0, name=':YHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
-                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
-    y_hst1 = pvproperty(value=0.0, name=':YHST1', max_length=HIST_BUF_SIZE, read_only=True,
-                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
-    y_hst2 = pvproperty(value=0.0, name=':YHST2', max_length=HIST_BUF_SIZE, read_only=True,
-                       upper_disp_limit=3.0, lower_disp_limit=-3.0, precision=4, units='mm')
+    pvprop_position = partial(pvproperty,
+        value=0.0, read_only=True, record='ai',
+        upper_disp_limit=3.0, lower_disp_limit=-3.0,
+        precision=4, units='mm'
+        )
+    pvprop_position_buffer = partial(pvprop_position,
+        max_length=HIST_BUF_SIZE
+        )
 
-    tmit = pvproperty(value=0.0, name=':TMIT', read_only=True, record='ai',
-                   upper_disp_limit=1.0e10, lower_disp_limit=0)
-    tmit_hstbr = pvproperty(value=0.0, name=':TMITHSTBR', max_length=HIST_BUF_SIZE, read_only=True,
-                          upper_disp_limit=1.0e10, lower_disp_limit=0)
-    tmit_hst1 = pvproperty(value=0.0, name=':TMITHST1', max_length=HIST_BUF_SIZE, read_only=True,
-                          upper_disp_limit=1.0e10, lower_disp_limit=0)
-    tmit_hst2 = pvproperty(value=0.0, name=':TMITHST2', max_length=HIST_BUF_SIZE, read_only=True,
-                          upper_disp_limit=1.0e10, lower_disp_limit=0)
+    pvprop_tmit = partial(pvproperty,
+        value=0.0, read_only=True, record='ai',
+        upper_disp_limit=1.0e10, lower_disp_limit=0
+        )
+    pvprop_tmit_buffer = partial(pvprop_tmit,
+        max_length=HIST_BUF_SIZE
+        )
+
+    x       = pvprop_position(name=':X')
+    x_hstbr = pvprop_position_buffer(name=':XHSTBR')
+    x_hst1  = pvprop_position_buffer(name=':XHST1')
+    x_hst2  = pvprop_position_buffer(name=':XHST2')
+
+    y       = pvprop_position(name=':Y')
+    y_hstbr = pvprop_position_buffer(name=':YHSTBR')
+    y_hst1  = pvprop_position_buffer(name=':YHST1')
+    y_hst2  = pvprop_position_buffer(name=':YHST2')
+
+    tmit       = pvprop_tmit(name=':TMIT')
+    tmit_hstbr = pvprop_tmit_buffer(name=':TMITHSTBR')
+    tmit_hst1  = pvprop_tmit_buffer(name=':TMITHST1')
+    tmit_hst2  = pvprop_tmit_buffer(name=':TMITHST2')
 
     z = pvproperty(value=0.0, name=':Z', read_only=True, precision=2, units='m')
 
