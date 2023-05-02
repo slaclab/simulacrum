@@ -188,6 +188,7 @@ class ModelService:
             if self.recalc_needed:
                 self.tao.cmd("set global lattice_calc_on = T")
                 self.tao.cmd("set global lattice_calc_on = F")
+                self.send_update_notification()
                 self.recalc_needed = False
             if self.need_zmq_broadcast:
                 try:
@@ -267,6 +268,9 @@ class ModelService:
     #information broadcast by the model is sent as two separate messages:
     #metadata message: sent first with 1) tag describing data for services to filter on, 2) type -optional, 3) size -optional
     #data message: sent either as a python object or a series of bits
+
+    def send_update_notification(self):
+        self.model_broadcast_socket.send_pyobj({'tag': 'model_update'}, zmq.SNDMORE)
     
     def send_orbit(self):
         orb = self.get_orbit()
