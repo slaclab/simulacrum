@@ -24,11 +24,9 @@ L = simulacrum.util.SimulacrumLog(os.path.splitext(os.path.basename(__file__))[0
 
 HIST_BUF_SIZE = 2800
 
-N_PARTICLES = 200
 M_ELEC      = 0.51099895000e6 # eV
 C           = 2.99792458e8    # m/sec
-UNDH_PERIOD = 26.0e-3         # m
-UNDS_PERIOD = 39.0e-3         # m
+HC          = 1240            # eV nm
 
 
 pvprop_pulse_E = partial(pvproperty,
@@ -51,27 +49,38 @@ class PulseIntensityService(simulacrum.Service):
         self.cmd_socket = zmq.Context().socket(zmq.REQ)
         self.cmd_socket.connect("tcp://127.0.0.1:{}".format(os.environ.get('MODEL_PORT', 12312)))
 
+        tao_setup_cmds = [
+            'show global',
+            'show lat -no_slaves -at L_PERIOD UMA*',
+            'set global init_lat_sigma_from_beam  = T',
+            'set global lattice_calc_on = T',
+            'set global lattice_calc_on = F',
+            ]
+        self.cmd_socket.send_pyobj({'cmd':'tao_batch', 'val':tao_setup_cmds})
+        tao_setup_resp = self.cmd_socket.recv_pyobj()['result']
+
+        init_path = tao_setup_resp[0][-2]
+        und_params = tao_setup_resp[1][2:-2]
+
         # provide HXR/SXR GDET PV based on the model service beamline
         # determine beamline by checking which tao.init file the model service is using
-        self.cmd_socket.send_pyobj({'cmd': 'tao', 'val': 'show global'})
-        init_path = self.cmd_socket.recv_pyobj()['result'][-2]
         init_dir, init_f = os.path.split(init_path.split()[1])
         assert init_f == 'tao.init'
         self.beamline = init_dir.split('/')[-1].upper()
         self.und_line = self.beamline[-3:]
         if self.und_line not in ['HXR', 'SXR']:
             raise RuntimeError('Invalid model beamline. Must be HXR,SXR')
-
-        if self.und_line == 'HXR':
+        elif self.und_line == 'HXR':
             self.und_start = 'BEGUNDH'
-            self.und_period = UNDH_PERIOD
             device_name = 'GDET:FEE1:241'
             pulse_PV = HXRPulseIntensity(prefix=device_name)
         elif self.und_line == 'SXR':
             self.und_start = 'BEGUNDS'
-            self.und_period = UNDS_PERIOD
             device_name = 'EM1K0:GMD:HPS'
             pulse_PV = SXRPulseIntensity(prefix=device_name)
+
+        self.L_und = sum([float(row.split()[4]) for row in und_params])
+        self.und_period = float(und_params[0].split()[5])
 
         self.add_pvs({device_name: pulse_PV})
 
@@ -80,104 +89,116 @@ class PulseIntensityService(simulacrum.Service):
 
         self.pulse_history = deque(np.full((HIST_BUF_SIZE,), np.nan), maxlen=HIST_BUF_SIZE)
 
-        # configure model for multi-particle tracking, force recalculation
-        L.debug(f'Enabling Tao multi-particle tracking with N = {N_PARTICLES}.')
-        cmds = [
-            'set global track_type = beam',
-            f'set beam_init n_particle = {N_PARTICLES}',
-            'set global lattice_calc_on = T',
-            'set global lattice_calc_on = F',
-            ]
-        self.cmd_socket.send_pyobj({'cmd':'tao_batch', 'val':cmds})
-        output = self.cmd_socket.recv_pyobj()
-
         L.info(f'FEL pulse intensity service running for {self.beamline} beamline.')
 
     def calculate_pulse_intensity(self):
         """
-        uses Ming Xie formulas to get FEL saturation power, calculates pulse energy in mJ
+        uses Ming Xie formulas to get FEL saturation length, calculates pulse energy in mJ
         known blind spots:
-         - assumes the FEL process will reach saturation i.e. gain length <= UND length
          - no dependence on orbit
          - no UND tapering simulation
          - no 3D effects included
         """
-        cmds = [
-            f'python bunch_params {self.und_start}|model',
+        model_update_cmds = [
+            f'show beam -lat {self.und_start}',
+            f'python ele:param {self.und_start}|model e_tot',
             'show lat -no_slaves -at B_MAX UMA*',
+            f'python ele:twiss {self.und_start}|model',
             # f'show beam {self.und_start}',
             # f'show emittance -ele {self.und_start}',
             ]
-        self.cmd_socket.send_pyobj({'cmd':'tao_batch', 'val':cmds})
-        output = self.cmd_socket.recv_pyobj()
+        self.cmd_socket.send_pyobj({'cmd':'tao_batch', 'val':model_update_cmds})
+        model_update_resp = self.cmd_socket.recv_pyobj()['result']
 
-        bunch_params = output['result'][0]
-        sigma_x  = float(bunch_params[  6].split(';')[3])
-        n_emit_x = float(bunch_params[  9].split(';')[3])
-        n_emit_y = float(bunch_params[ 19].split(';')[3])
-        sigma_z  = float(bunch_params[ 26].split(';')[3])
-        E_tot    = float(bunch_params[-12].split(';')[3])
-        beta     = float(bunch_params[-11].split(';')[3])
-        Q_bunch  = float(bunch_params[ -5].split(';')[3])
+        sigma_vec  = model_update_resp[0][3].split()[1:]
+        E_tot      = float(model_update_resp[1][0].split(';')[3])
+        und_params = model_update_resp[2][2:-2]
+        und_twiss  = model_update_resp[3]
 
-        und_params   = output['result'][1]
-        und_bmax_all = [float(row.split()[5]) for row in und_params[2:-2]]
+        sigma_x   = float(sigma_vec[0])
+        sigma_y   = float(sigma_vec[2])
+        sigma_z   = float(sigma_vec[4])
+        sigma_pz  = float(sigma_vec[5])
+        # sigma_pz = 0.5e-3
 
-        dt = sigma_z / (beta*C)
-        I_peak = Q_bunch / dt
-
-        # questionable averaging to get normalized emittance
-        n_emit = (n_emit_x + n_emit_y) / 2
+        Q_bunch = 180e-12
 
         gamma = E_tot / M_ELEC
 
-        # not sure where to find rms E-spread. Spitball 1e-5 for now
-        sigma_e_rel = 1e-5
-        sigma_e = sigma_e_rel * E_tot
+        beta = np.sqrt(1 - (1/gamma**2))
+        dt = sigma_z / (beta*C)
+        I_peak = Q_bunch / dt
 
+        beta_x = float(und_twiss[1].split(';')[3])
+        beta_y = float(und_twiss[7].split(';')[3])
+        emit_x = sigma_x**2 / beta_x
+        emit_y = sigma_y**2 / beta_y
+        n_emit = gamma * np.sqrt(emit_x * emit_y)
+
+        sigma_e = sigma_pz * E_tot
+
+        und_bmax_all = [float(row.split()[5]) for row in und_params]
         und_K_all = [((0.026*C)/(2*np.pi*M_ELEC)) * B_max for B_max in und_bmax_all]
 
-        input_summary = \
-            f'    Q         = {Q_bunch*1e12:.3f} pC\n' + \
-            f'    E         = {E_tot:.3f} MeV\n' + \
-            f'    sigma x   = {sigma_x*1e6:.3f} um\n' + \
-            f'    norm emit = {n_emit*1e6:.3f} mm-mrad \n' + \
-            f'    bunch len = {dt*1e15:.3f} fs\n' + \
-            f'    I         = {I_peak:.3f} A\n' + \
-            f'    sigma E   = {sigma_e*1e-3:.3f} keV\n' + \
-            f'    start K   = {und_K_all[0]:.3f}'
-
-        output = mingxie(
+        mx_out = mingxie(
             sigma_x=sigma_x, und_lambda=self.und_period, und_k=und_K_all[0],
             current=I_peak, gamma=gamma, norm_emit=n_emit, sigma_E=sigma_e
             )
 
-        E_FEL = 1240 / (output['fel_wavelength']*1e9)
-        pulse_intensity = 1e3 * output['saturation_power'] * dt
+        E_FEL = HC / (mx_out['fel_wavelength']*1e9)
+
+        L_gain = mx_out['gain_length']
+        L_sat = mx_out['saturation_length']
+        rho = mx_out['pierce_parameter']
+
+        E_pulse_sat = rho * gamma * M_ELEC * Q_bunch * 1e3
+
+        # Exponential power gain until saturation,
+        # roughly linear gain after (assuming sensible UND taper)
+        if self.L_und < L_sat:
+            E_pulse = E_pulse_sat * np.exp(-(L_sat - self.L_und)/L_gain)
+        else:
+            E_pulse = E_pulse_sat * (self.L_und/L_sat)
+
+        machine_summary = \
+            f'    UND length  = {self.L_und:.3f} m\n' + \
+            f'    UND period  = {self.und_period*1e3:.3f} cm\n' + \
+            f'    start K     = {und_K_all[0]:.3f}'
+
+        beam_summary = \
+            f'    Q           = {Q_bunch*1e12:.3f} pC\n' + \
+            f'    E           = {E_tot*1e-6:.3f} MeV\n' + \
+            f'    sigma x     = {sigma_x*1e6:.3f} um\n' + \
+            f'    norm emit   = {n_emit*1e6:.3f} mm-mrad \n' + \
+            f'    bunch len   = {dt*1e15:.3f} fs\n' + \
+            f'    I           = {I_peak:.3f} A\n' + \
+            f'    sigma E     = {sigma_e*1e-3:.3f} keV\n' + \
+            f'    start K     = {und_K_all[0]:.3f}'
 
         output_summary = \
-            f"    gain length = {output['gain_length']:.3f} m\n" + \
-            f"    sat. length = {output['saturation_length']:.3f} m\n" + \
-            f"    sat. power  = {output['saturation_power']:.3e} W\n" + \
-            f"    lambda_FEL  = {output['fel_wavelength']*1e9:.3e} nm\n" + \
+            f"    gain length = {L_gain:.3f} m\n" + \
+            f"    sat. length = {L_sat:.3f} m\n" + \
+            f"    sat. power  = {mx_out['saturation_power']:.3e} W\n" + \
+            f"    lambda_FEL  = {mx_out['fel_wavelength']*1e9:.3e} nm\n" + \
             f"    E_FEL       = {E_FEL:.1f} eV\n" + \
-            f"    rho         = {output['pierce_parameter']:.3e}\n" + \
-            f"    E_pulse     = {pulse_intensity:.3f} mJ"
+            f"    rho         = {rho:.3e}\n" + \
+            f"    E_pulse     = {E_pulse:.3f} mJ"
 
         update_summary = \
             f'Simulated FEL pulse energy updated\n' + \
-            f'  Beam Inputs:\n{input_summary}\n' + \
+            f'  Machine Inputs:\n{machine_summary}\n' + \
+            f'  Beam Inputs:\n{beam_summary}\n' + \
             f'  Outputs:\n{output_summary}'
 
         L.debug(update_summary)
 
-        return pulse_intensity
+        return E_pulse
 
     async def update_pulse_intensity(self):
-        pulse_E = self.calculate_pulse_intensity()
+        E_pulse = self.calculate_pulse_intensity()
         ts = time.time()
-        await self[self.pulse_E_name].write(pulse_E, timestamp=ts)
-        self.pulse_history.append(pulse_E)
+        await self[self.pulse_E_name].write(E_pulse, timestamp=ts)
+        self.pulse_history.append(E_pulse)
         await self[self.pulse_hist_name].write(list(self.pulse_history), timestamp=ts)
 
     async def watch_model(self, flags=0, copy=False, track=False):
