@@ -119,7 +119,6 @@ class PulseIntensityService(simulacrum.Service):
         sigma_y   = float(sigma_vec[2])
         sigma_z   = float(sigma_vec[4])
         sigma_pz  = float(sigma_vec[5])
-        # sigma_pz = 0.5e-3
 
         Q_bunch = 180e-12
 
@@ -130,19 +129,21 @@ class PulseIntensityService(simulacrum.Service):
         I_peak = Q_bunch / dt
 
         beta_x = float(und_twiss[1].split(';')[3])
+        eta_x  = float(und_twiss[5].split(';')[3])
         beta_y = float(und_twiss[7].split(';')[3])
-        emit_x = sigma_x**2 / beta_x
-        emit_y = sigma_y**2 / beta_y
-        n_emit = gamma * np.sqrt(emit_x * emit_y)
+        eta_y  = float(und_twiss[11].split(';')[3])
+        delta = sigma_pz / E_tot
 
-        sigma_e = sigma_pz * E_tot
+        emit_x = (sigma_x**2 + eta_x**2 * delta**2) / beta_x
+        emit_y = (sigma_y**2 + eta_y**2 * delta**2) / beta_y
+        n_emit = gamma * beta * np.sqrt(emit_x * emit_y)
 
         und_bmax_all = [float(row.split()[5]) for row in und_params]
         und_K_all = [((0.026*C)/(2*np.pi*M_ELEC)) * B_max for B_max in und_bmax_all]
 
         mx_out = mingxie(
             sigma_x=sigma_x, und_lambda=self.und_period, und_k=und_K_all[0],
-            current=I_peak, gamma=gamma, norm_emit=n_emit, sigma_E=sigma_e
+            current=I_peak, gamma=gamma, norm_emit=n_emit, sigma_E=sigma_pz
             )
 
         E_FEL = HC / (mx_out['fel_wavelength']*1e9)
@@ -151,7 +152,7 @@ class PulseIntensityService(simulacrum.Service):
         L_sat = mx_out['saturation_length']
         rho = mx_out['pierce_parameter']
 
-        E_pulse_sat = rho * gamma * M_ELEC * Q_bunch * 1e3
+        E_pulse_sat = rho * E_tot * Q_bunch * 1e3
 
         # Exponential power gain until saturation,
         # roughly linear gain after (assuming sensible UND taper)
@@ -172,7 +173,7 @@ class PulseIntensityService(simulacrum.Service):
             f'    norm emit   = {n_emit*1e6:.3f} mm-mrad \n' + \
             f'    bunch len   = {dt*1e15:.3f} fs\n' + \
             f'    I           = {I_peak:.3f} A\n' + \
-            f'    sigma E     = {sigma_e*1e-3:.3f} keV\n' + \
+            f'    sigma E     = {sigma_pz*1e-3:.3f} keV\n' + \
             f'    start K     = {und_K_all[0]:.3f}'
 
         output_summary = \
