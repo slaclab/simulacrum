@@ -103,17 +103,19 @@ class PulseIntensityService(simulacrum.Service):
             f'show beam -lat {self.und_start}',
             f'python ele:param {self.und_start}|model e_tot',
             'show lat -no_slaves -at B_MAX UMA*',
-            f'python ele:twiss {self.und_start}|model',
+            f'python ele:twiss {self.und_start}',
+            f'python ele:twiss {self.und_start}|design',
             # f'show beam {self.und_start}',
             # f'show emittance -ele {self.und_start}',
             ]
         self.cmd_socket.send_pyobj({'cmd':'tao_batch', 'val':model_update_cmds})
         model_update_resp = self.cmd_socket.recv_pyobj()['result']
 
-        sigma_vec  = model_update_resp[0][3].split()[1:]
-        E_tot      = float(model_update_resp[1][0].split(';')[3])
-        und_params = model_update_resp[2][2:-2]
-        und_twiss  = model_update_resp[3]
+        sigma_vec        = model_update_resp[0][3].split()[1:]
+        E_tot            = float(model_update_resp[1][0].split(';')[3])
+        und_params       = model_update_resp[2][2:-2]
+        und_twiss        = model_update_resp[3]
+        und_twiss_design = model_update_resp[4]
 
         sigma_x   = float(sigma_vec[0])
         sigma_y   = float(sigma_vec[2])
@@ -128,11 +130,24 @@ class PulseIntensityService(simulacrum.Service):
         dt = sigma_z / (beta*C)
         I_peak = Q_bunch / dt
 
-        beta_x = float(und_twiss[1].split(';')[3])
-        eta_x  = float(und_twiss[5].split(';')[3])
-        beta_y = float(und_twiss[7].split(';')[3])
-        eta_y  = float(und_twiss[11].split(';')[3])
-        delta = sigma_pz / E_tot
+        beta_x  = float(und_twiss[1].split(';')[3])
+        alpha_x = float(und_twiss[2].split(';')[3])
+        eta_x   = float(und_twiss[5].split(';')[3])
+        beta_y  = float(und_twiss[7].split(';')[3])
+        alpha_y = float(und_twiss[8].split(';')[3])
+        eta_y   = float(und_twiss[11].split(';')[3])
+        delta   = sigma_pz / E_tot
+
+        beta_x_design  = float(und_twiss_design[1].split(';')[3])
+        alpha_x_design = float(und_twiss_design[2].split(';')[3])
+        beta_y_design  = float(und_twiss_design[7].split(';')[3])
+        alpha_y_design = float(und_twiss_design[8].split(';')[3])
+
+        # compute BMAGs
+        k_x = beta_x / beta_x_design
+        k_y = beta_y / beta_y_design
+        BMAG_x = 0.5 * (k_x + 1/k_x + (alpha_x_design*np.sqrt(k_x) - alpha_x*np.sqrt(1/k_x))**2)
+        BMAG_y = 0.5 * (k_y + 1/k_y + (alpha_y_design*np.sqrt(k_y) - alpha_y*np.sqrt(1/k_y))**2)
 
         emit_x = (sigma_x**2 + eta_x**2 * delta**2) / beta_x
         emit_y = (sigma_y**2 + eta_y**2 * delta**2) / beta_y
@@ -146,11 +161,13 @@ class PulseIntensityService(simulacrum.Service):
             current=I_peak, gamma=gamma, norm_emit=n_emit, sigma_E=sigma_pz
             )
 
-        E_FEL = HC / (mx_out['fel_wavelength']*1e9)
+        L_gain     = mx_out['gain_length']
+        L_sat      = mx_out['saturation_length']
+        P_sat      = mx_out['saturation_power']
+        lambda_fel = mx_out['fel_wavelength']
+        rho        = mx_out['pierce_parameter']
 
-        L_gain = mx_out['gain_length']
-        L_sat = mx_out['saturation_length']
-        rho = mx_out['pierce_parameter']
+        E_FEL = HC / (lambda_fel*1e9)
 
         E_pulse_sat = rho * E_tot * Q_bunch * 1e3
 
