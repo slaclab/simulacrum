@@ -5,7 +5,8 @@ from caproto import AlarmSeverity, ChannelEnum, ChannelFloat, ChannelInteger, Ch
 from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar, PvpropertyEnum,
                             PvpropertyEnumRO, PvpropertyFloat, PvpropertyFloatRO, PvpropertyInteger, PvpropertyString,
                             ioc_arg_parser, pvproperty, run)
-from lcls_tools.superconducting.scLinac import L1BHL, LINAC_TUPLES
+from lcls_tools.superconducting.sc_linac_utils import L1BHL, LINAC_TUPLES
+
 from simulacrum import Service
 
 
@@ -110,7 +111,7 @@ class StepperPVGroup(PVGroup):
                                 enum_strings=("not at limit", "at limit"))
     limit_switch_b = pvproperty(value=0, name="STAT_LIMB", dtype=ChannelType.ENUM,
                                 enum_strings=("not at limit", "at limit"))
-
+    
     def __init__(self, prefix, cavity_group):
         super().__init__(prefix)
         self.cavity_group: CavityPVGroup = cavity_group
@@ -118,51 +119,51 @@ class StepperPVGroup(PVGroup):
             self.steps_per_hertz = 256 / 1.4
         else:
             self.steps_per_hertz = 256 / 18.3
-
+    
     async def move(self, move_sign_des: int):
         await self.motor_moving.write("Moving")
         steps = 0
         step_change = (move_sign_des * self.speed.value)
         freq_move_sign = move_sign_des if self.cavity_group.is_hl else -move_sign_des
-
+        
         while self.step_des.value - steps >= self.speed.value and self.abort.value != 1:
             await self.step_tot.write(self.step_tot.value + self.speed.value)
             await self.step_signed.write(self.step_signed.value + step_change)
-
+            
             steps += self.speed.value
             delta = self.speed.value // self.steps_per_hertz
             new_detune = self.cavity_group.detune.value + (freq_move_sign * delta)
-
+            
             await self.cavity_group.detune.write(new_detune)
             await self.cavity_group.detune_rfs.write(new_detune)
             await sleep(1)
-
+        
         if self.abort.value == 1:
             await self.motor_moving.write("Not Moving")
             await self.abort.write(0)
             return
-
+        
         remainder = self.step_des.value - steps
         await self.step_tot.write(self.step_tot.value + remainder)
         step_change = (move_sign_des * remainder)
         await self.step_signed.write(self.step_signed.value + step_change)
-
+        
         delta = remainder // self.steps_per_hertz
         new_detune = self.cavity_group.detune.value + (freq_move_sign * delta)
         await self.cavity_group.detune.write(new_detune)
         await self.cavity_group.detune_rfs.write(new_detune)
-
+        
         await self.motor_moving.write("Not Moving")
         await self.motor_done.write("Done")
-
+    
     @move_neg.putter
     async def move_neg(self, instance, value):
         await self.move(-1)
-
+    
     @move_pos.putter
     async def move_pos(self, instance, value):
         await self.move(1)
-
+    
     hardware_sum = pvproperty(value=0, name="HWSTATSUM", dtype=ChannelType.ENUM,
                               enum_strings=("", "", "Fault"))
 
@@ -190,7 +191,7 @@ class PiezoPVGroup(PVGroup):
                                                    value=0,
                                                    enum_strings=("", "Complete",
                                                                  "Running"))
-
+    
     withrf_run_check = pvproperty(name="RFTESTSTRT")
     withrf_check_status: PvpropertyEnum = pvproperty(name="RFTESTSTS",
                                                      dtype=ChannelType.ENUM,
@@ -209,13 +210,13 @@ class PiezoPVGroup(PVGroup):
     feedback_sum = pvproperty(value=0, name="FBSTATSUM",
                               dtype=ChannelType.ENUM,
                               enum_strings=("", "", "Fault"))
-
+    
     @prerf_test_start.putter
     async def prerf_test_start(self, instance, value):
         await self.prerf_test_status.write("Running")
         await sleep(5)
         await self.prerf_test_status.write("Complete")
-
+    
     @feedback_mode.putter
     async def feedback_mode(self, instance, value):
         await self.feedback_mode_stat.write(value)
@@ -258,7 +259,7 @@ class CavFaultPVGroup(PVGroup):
                                                                 "MINOR",
                                                                 "MAJOR",
                                                                 "INVALID"))
-
+    
     ampFeedbackSum: PvpropertyEnum = pvproperty(value=0, name="AMPFB_SUM",
                                                 dtype=ChannelType.ENUM,
                                                 enum_strings=("Not clipped",
@@ -333,7 +334,7 @@ class CavityPVGroup(PVGroup):
                                              dtype=ChannelType.FLOAT)
     adesMax: PvpropertyFloat = pvproperty(value=21, name="ADES_MAX",
                                           dtype=ChannelType.FLOAT)
-
+    
     pdes: PvpropertyFloat = pvproperty(value=0.0, name='PDES')
     pmean: PvpropertyFloat = pvproperty(value=0.0, name='PMEAN')
     pact: PvpropertyFloatRO = pvproperty(value=0.0, name='PACT', read_only=True)
@@ -349,7 +350,7 @@ class CavityPVGroup(PVGroup):
                                         dtype=ChannelType.ENUM,
                                         enum_strings=("Not parked", "Parked"),
                                         record='mbbi')
-
+    
     # Cavity Summary Display PVs
     cudStatus: PvpropertyString = pvproperty(value="TLC", name="CUDSTATUS",
                                              dtype=ChannelType.STRING)
@@ -409,20 +410,20 @@ class CavityPVGroup(PVGroup):
                                                 enum_strings=("Crash",
                                                               "Complete",
                                                               "Running"))
-
+    
     ssa_overrange: PvpropertyInteger = pvproperty(value=0, name="ASETSUB.VALQ",
                                                   dtype=ChannelType.INT)
-
+    
     def __init__(self, prefix, isHL: bool):
         super().__init__(prefix)
-
+        
         self.is_hl = isHL
-
+        
         if isHL:
             self.length = 0.346
         else:
             self.length = 1.038
-
+    
     @ades.putter
     async def ades(self, instance, value):
         await self.aact.write(value)
@@ -430,33 +431,33 @@ class CavityPVGroup(PVGroup):
         gradient = value / self.length
         if self.gact.value != gradient:
             await self.gdes.write(gradient)
-
+    
     @pdes.putter
     async def pdes(self, instance, value):
         value = value % 360
         await self.pact.write(value)
         await self.pmean.write(value)
-
+    
     @gdes.putter
     async def gdes(self, instance, value):
         await self.gact.write(value)
         amplitude = value * self.length
         if self.aact.value != amplitude:
             await self.ades.write(amplitude)
-
+    
     @rf_state_des.putter
     async def rf_state_des(self, instance, value):
         if value == "Off":
             await self.power_off()
         elif value == "On":
             await self.power_on()
-
+    
     async def power_off(self):
         await self.amean.write(0)
         await self.aact.write(0)
         await self.gact.write(0)
         await self.rf_state_act.write("Off")
-
+    
     async def power_on(self):
         await self.aact.write(self.ades.value)
         await self.amean.write(self.ades.value)
@@ -491,7 +492,7 @@ class SSAPVGroup(PVGroup):
                                                           "Rebooting SSA...",
                                                           "Rebooting X-Port...",
                                                           "Resetting Processor..."))
-
+    
     cal_start: PvpropertyEnum = pvproperty(value=0, name="CALSTRT",
                                            dtype=ChannelType.ENUM,
                                            enum_strings=("Start", "Start"))
@@ -512,7 +513,7 @@ class SSAPVGroup(PVGroup):
                                                  dtype=ChannelType.FLOAT)
     power: PvpropertyFloat = pvproperty(name="CALPWR", value=4000,
                                         dtype=ChannelType.FLOAT)
-
+    
     nirp: PvpropertyEnum = pvproperty(value=1, name="NRP_PRMT",
                                       dtype=ChannelType.ENUM,
                                       enum_strings=("FAULT", "OK"))
@@ -520,12 +521,12 @@ class SSAPVGroup(PVGroup):
                                            dtype=ChannelType.ENUM,
                                            enum_strings=("NO_ALARM", "MINOR",
                                                          "MAJOR", "INVALID"))
-
+    
     def __init__(self, prefix, cavityGroup: CavityPVGroup):
-
+        
         super().__init__(prefix)
         self.cavityGroup: CavityPVGroup = cavityGroup
-
+    
     @cal_start.putter
     async def cal_start(self, instance, value):
         """
@@ -545,7 +546,7 @@ class SSAPVGroup(PVGroup):
         else:
             await self.cal_stat.write("Success")
             print("Calibration Successful")
-
+    
     @on.putter
     async def on(self, instance, value):
         if value == "True" and self.status_msg.value != "SSA On":
@@ -557,7 +558,7 @@ class SSAPVGroup(PVGroup):
             await self.off.write("False")
             if self.cavityGroup.rf_state_des.value == "On":
                 await self.cavityGroup.power_on()
-
+    
     @off.putter
     async def off(self, instance, value):
         if value == "True" and self.status_msg.value != "SSA Off":
@@ -591,68 +592,68 @@ class CavityService(Service):
     def __init__(self):
         super().__init__()
         self["PHYS:SYS0:1:SC_CAV_FAULT_HEARTBEAT"] = ChannelInteger(value=0)
-
+        
         self["ALRM:SYS0:SC_CAV_FAULT:ALHBERR"] = ChannelEnum(enum_strings=("RUNNING",
                                                                            "NOT_RUNNING",
                                                                            "INVALID"),
                                                              value=0)
-
+        
         self.add_pvs(BSOICPVGroup(prefix="BSOC:SYSW:2:"))
-
+        
         rackA = range(1, 5)
         self.add_pvs(PPSPVGroup(prefix="PPS:SYSW:1:"))
-
+        
         for linac_name, cm_list in LINAC_TUPLES:
             self[f"ACCL:{linac_name}:1:AACTMEANSUM"] = ChannelFloat(value=0.0)
             self[f"ACCL:{linac_name}:1:ADES_MAX"] = ChannelFloat(value=2800.0)
             if linac_name == "L1B":
                 cm_list += L1BHL
             for cm_name in cm_list:
-
+                
                 is_hl = cm_name in L1BHL
                 heater_prefix = f"CPIC:CM{cm_name}:0000:EHCV:"
                 self.add_pvs(HeaterPVGroup(prefix=heater_prefix))
-
+                
                 self[f"CRYO:CM{cm_name}:0:CAS_ACCESS"] = ChannelEnum(enum_strings=("Close", "Open"),
                                                                      value=1)
                 self[f"ACCL:{linac_name}:{cm_name}00:ADES_MAX"] = ChannelFloat(value=168.0)
-
+                
                 for cav_num in range(1, 9):
                     cm_prefix = f"ACCL:{linac_name}:{cm_name}"
                     cav_prefix = cm_prefix + f"{cav_num}0:"
-
+                    
                     jt_prefix = f"CLIC:CM{cm_name}:3001:PVJT:"
                     liquid_level_prefix = f"CLL:CM{cm_name}:"
-
+                    
                     HOM_prefix = f"CTE:CM{cm_name}:1{cav_num}"
                     cryo_prefix = f"CLL:CM{cm_name}:2601:US:"
-
+                    
                     cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
                     self.add_pvs(SSAPVGroup(prefix=cav_prefix + "SSA:",
                                             cavityGroup=cavityGroup))
-
+                    
                     self.add_pvs(PiezoPVGroup(prefix=cav_prefix + "PZT:"))
                     self.add_pvs(StepperPVGroup(prefix=cav_prefix + "STEP:",
                                                 cavity_group=cavityGroup))
                     self.add_pvs(CavFaultPVGroup(prefix=cav_prefix))
-
+                    
                     self.add_pvs(JTPVGroup(prefix=jt_prefix))
                     self.add_pvs(LiquidLevelPVGroup(prefix=liquid_level_prefix))
-
+                    
                     # Rack PVs are stupidly inconsistent
                     if cav_num in rackA:
                         hwi_prefix = cm_prefix + "00:RACKA:"
                     else:
                         hwi_prefix = cm_prefix + "00:RACKB:"
-
+                    
                     self.add_pvs(HWIPVGroup(prefix=hwi_prefix))
                     self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(CouplerVacuumPVGroup(prefix=cm_prefix + "10:"))
                     self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
                     self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
-
+        
         self["ACCL:L2B:1400:RACKA:HWINITSUM"].write(3, severity=AlarmSeverity.INVALID_ALARM)
 
 
