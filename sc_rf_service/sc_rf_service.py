@@ -164,7 +164,7 @@ class StepperPVGroup(PVGroup):
         if self.piezo_group.enable_stat.value == 1 and self.piezo_group.feedback_mode_stat.value == "Feedback":
             freq_change = new_detune - starting_detune
             voltage_change = freq_change * (1/PIEZO_HZ_PER_VOLT)
-            print(f"Changin piezo voltage by {voltage_change} V")
+            print(f"Changing piezo voltage by {voltage_change} V")
             await self.piezo_group.voltage.write(self.piezo_group.voltage.value + voltage_change)
         
         await self.cavity_group.detune.write(new_detune)
@@ -180,7 +180,6 @@ class StepperPVGroup(PVGroup):
     @move_pos.putter
     async def move_pos(self, instance, value):
         await self.move(1)
-
 
 class PiezoPVGroup(PVGroup):
     enable: PvpropertyEnum = pvproperty(name="ENABLE")
@@ -234,12 +233,6 @@ class PiezoPVGroup(PVGroup):
     def __init__(self, prefix, cavity_group):
         super().__init__(prefix)
         self.cavity_group: CavityPVGroup = cavity_group
-    
-    # @voltage.putter
-    # async def voltage(self, instance, value):
-    #     voltage_delta = value - self.voltage.value
-    #     hz_delta = PIEZO_HZ_PER_VOLT * voltage_delta
-    #     await self.cavity_group.detune.write(self.cavity_group.detune.value + hz_delta)
     
     @prerf_test_start.putter
     async def prerf_test_start(self, instance, value):
@@ -724,7 +717,6 @@ class CavityService(Service):
                     self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
                     self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
-
 
 def main():
     service = CavityService()
