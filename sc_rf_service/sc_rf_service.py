@@ -159,10 +159,10 @@ class PiezoPVGroup(PVGroup):
     withrf_save_dfgain = pvproperty(name="SAVE_DFGAIN.PROC")
     detunegain_new = pvproperty(name="DFGAIN_NEW")
     hardware_sum = pvproperty(value=0, name="HWSTATSUM", dtype=ChannelType.ENUM,
-                              enum_strings=("", "", "Fault"))
+                              enum_strings=("", "Minor Fault", "Fault"))
     feedback_sum = pvproperty(value=0, name="FBSTATSUM",
                               dtype=ChannelType.ENUM,
-                              enum_strings=("", "", "Fault"))
+                              enum_strings=("", "Minor Fault", "Fault"))
 
     @prerf_test_start.putter
     async def prerf_test_start(self, instance, value):
@@ -308,7 +308,7 @@ class CavityPVGroup(PVGroup):
                                                        "READY"))
     cudDesc: PvpropertyChar = pvproperty(value="Name", name="CUDDESC",
                                          dtype=ChannelType.CHAR)
-    ssa_latch: PvpropertyEnum = pvproperty(value=1, name="SSA_LTCH",
+    ssa_latch: PvpropertyEnum = pvproperty(value=0, name="SSA_LTCH",
                                            dtype=ChannelType.ENUM,
                                            enum_strings=("OK", "Fault"))
     sel_aset: PvpropertyFloat = pvproperty(value=0.0, name="SEL_ASET",
