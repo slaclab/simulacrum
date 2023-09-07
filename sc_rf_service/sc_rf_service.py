@@ -3,49 +3,67 @@ from datetime import datetime
 from random import random, randrange, uniform
 
 from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
-from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar,
-                            PvpropertyEnum, PvpropertyEnumRO, PvpropertyFloat,
-                            PvpropertyFloatRO, PvpropertyInteger,
-                            PvpropertyString, ioc_arg_parser, pvproperty, run)
-from lcls_tools.superconducting.sc_linac_utils import (L1BHL, LINAC_TUPLES,
-                                                       ESTIMATED_MICROSTEPS_PER_HZ,
-                                                       PIEZO_HZ_PER_VOLT)
+from caproto.server import (
+    PVGroup,
+    PvpropertyBoolEnum,
+    PvpropertyChar,
+    PvpropertyEnum,
+    PvpropertyEnumRO,
+    PvpropertyFloat,
+    PvpropertyFloatRO,
+    PvpropertyInteger,
+    PvpropertyString,
+    ioc_arg_parser,
+    pvproperty,
+    run,
+)
+from lcls_tools.superconducting.sc_linac_utils import (
+    L1BHL,
+    LINAC_TUPLES,
+    ESTIMATED_MICROSTEPS_PER_HZ,
+    PIEZO_HZ_PER_VOLT,
+)
 
 from simulacrum import Service
 
 
 class SeverityProp(pvproperty):
     def __init__(self, name, value, **cls_kwargs):
-        super().__init__(name=name + ".SEVR", value=value,
-                         dtype=ChannelType.ENUM,
-                         enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
-                         **cls_kwargs)
+        super().__init__(
+            name=name + ".SEVR",
+            value=value,
+            dtype=ChannelType.ENUM,
+            enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+            **cls_kwargs,
+        )
 
 
 class AutoSetupPVGroup(PVGroup):
-    progress: PvpropertyFloat = pvproperty(name="PROGRESS", value=0.0,
-                                           dtype=ChannelType.FLOAT)
+    progress: PvpropertyFloat = pvproperty(
+        name="PROG", value=0.0, dtype=ChannelType.FLOAT
+    )
     status_sevr: SeverityProp = SeverityProp(name="STATUS", value=0)
-    status: PvpropertyEnum = pvproperty(name="STATUS", dtype=ChannelType.ENUM,
-                                        enum_strings=("Ready/Complete",
-                                                      "Running", "Error"))
-    status_message: PvpropertyString = pvproperty(name="STATUS_MSG",
-                                                  value="Ready")
+    status: PvpropertyEnum = pvproperty(
+        name="STATUS",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ready", "Running", "Error"),
+    )
+    status_message: PvpropertyString = pvproperty(name="MSG", value="Ready")
     abort: PvpropertyBoolEnum = pvproperty(name="ABORT")
     shut_off: PvpropertyBoolEnum = pvproperty(name="SHUTOFF")
 
     start: PvpropertyBoolEnum = pvproperty(name="SETUPSTRT")
-    ssa_cal: PvpropertyBoolEnum = pvproperty(name="TURNON_SSASEL")
-    tune: PvpropertyEnum = pvproperty(name="TURNON_TUNESEL")
-    cav_char: PvpropertyEnum = pvproperty(name="TURNON_CHARSEL")
-    ramp: PvpropertyEnum = pvproperty(name="TURNON_RAMPSEL")
+    ssa_cal: PvpropertyBoolEnum = pvproperty(name="SETUP_SSAREQ")
+    tune: PvpropertyEnum = pvproperty(name="SETUP_TUNEREQ")
+    cav_char: PvpropertyEnum = pvproperty(name="SETUP_CHARREQ")
+    ramp: PvpropertyEnum = pvproperty(name="SETUP_RAMPREQ")
+    shutdown: PvpropertyBoolEnum = pvproperty(name="OFFSTRT")
 
 
 class HeaterPVGroup(PVGroup):
     setpoint = pvproperty(name="MANPOS_RQST", value=24.0)
     readback = pvproperty(name="ORBV", value=24.0)
-    mode_string: PvpropertyString = pvproperty(name="MODE_STRING",
-                                               value="SEQUENCER")
+    mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="SEQUENCER")
     manual: PvpropertyBoolEnum = pvproperty(name="MANUAL")
     sequencer: PvpropertyBoolEnum = pvproperty(name="SEQUENCER")
 
@@ -66,51 +84,92 @@ class LiquidLevelPVGroup(PVGroup):
 
 
 class CryomodulePVGroup(PVGroup):
-    nrp = pvproperty(value=0, name="NRP:STATSUMY", dtype=ChannelType.DOUBLE,
-                     record="ai")
+    nrp = pvproperty(
+        value=0, name="NRP:STATSUMY", dtype=ChannelType.DOUBLE, record="ai"
+    )
     aact_mean_sum = pvproperty(value=0, name="AACTMEANSUM")
     # TODO - find this and see what type pv it is on bcs/ops_lcls2_bcs_main.edl
     bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.INT)
 
 
 class CryoPVGroup(PVGroup):
-    uhl = pvproperty(value=0, name="LVL.SEVR", dtype=ChannelType.ENUM,
-                     enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
+    uhl = pvproperty(
+        value=0,
+        name="LVL.SEVR",
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
 
 
 class HOMPVGroup(PVGroup):
-    upstreamHOM = pvproperty(value=0, name="18:UH:TEMP.SEVR", dtype=ChannelType.ENUM,
-                             enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
-    downstreamHOM = pvproperty(value=0, name="20:DH:TEMP.SEVR", dtype=ChannelType.ENUM,
-                               enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
+    upstreamHOM = pvproperty(
+        value=0,
+        name="18:UH:TEMP.SEVR",
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
+    downstreamHOM = pvproperty(
+        value=0,
+        name="20:DH:TEMP.SEVR",
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
 
 
 class HWIPVGroup(PVGroup):
-    hwi = pvproperty(value=0, name="HWINITSUM", dtype=ChannelType.ENUM,
-                     enum_strings=("Ok", "HW Init running", "LLRF chassis problem"),
-                     record="mbbi")
-    fro = pvproperty(value=0, name="FREQSUM", dtype=ChannelType.ENUM,
-                     enum_strings=("OK", "Still OK", "Faulted"))
+    hwi = pvproperty(
+        value=0,
+        name="HWINITSUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "HW Init running", "LLRF chassis problem"),
+        record="mbbi",
+    )
+    fro = pvproperty(
+        value=0,
+        name="FREQSUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("OK", "Still OK", "Faulted"),
+    )
     fscan_start = pvproperty(value=0, name="FSCAN:FREQ_START")
     fscan_stop = pvproperty(value=0, name="FSCAN:FREQ_STOP")
     fscan_thresh = pvproperty(value=0, name="FSCAN:RMS_THRESH")
     fscan_overlap = pvproperty(value=0, name="FSCAN:MODE_OVERLAP")
-    prl = pvproperty(value=0, name="PRLSUM.SEVR", dtype=ChannelType.ENUM,
-                     enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
+    prl = pvproperty(
+        value=0,
+        name="PRLSUM.SEVR",
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
 
 
 class BeamlineVacuumPVGroup(PVGroup):
-    rackA = pvproperty(value=0, name="BMLNVACA_LTCH", dtype=ChannelType.ENUM,
-                       enum_strings=("Ok", "Fault"))
-    rackB = pvproperty(value=0, name="BMLNVACB_LTCH", dtype=ChannelType.ENUM,
-                       enum_strings=("Ok", "Fault"))
+    rackA = pvproperty(
+        value=0,
+        name="BMLNVACA_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Fault"),
+    )
+    rackB = pvproperty(
+        value=0,
+        name="BMLNVACB_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Fault"),
+    )
 
 
 class CouplerVacuumPVGroup(PVGroup):
-    rackA = pvproperty(value=0, name="CPLRVACA_LTCH", dtype=ChannelType.ENUM,
-                       enum_strings=("Ok", "Fault"))
-    rackB = pvproperty(value=0, name="CPLRVACB_LTCH", dtype=ChannelType.ENUM,
-                       enum_strings=("Ok", "Fault"))
+    rackA = pvproperty(
+        value=0,
+        name="CPLRVACA_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Fault"),
+    )
+    rackB = pvproperty(
+        value=0,
+        name="CPLRVACB_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Fault"),
+    )
 
 
 class StepperPVGroup(PVGroup):
@@ -128,22 +187,39 @@ class StepperPVGroup(PVGroup):
     nsteps_park = pvproperty(name="NSTEPS_PARK", value=5000000)
     push_signed_cold = pvproperty(name="PUSH_NSTEPS_COLD.PROC")
     push_signed_park = pvproperty(name="PUSH_NSTEPS_PARK.PROC")
-    motor_moving: PvpropertyBoolEnum = pvproperty(value=0, name="STAT_MOV",
-                                                  enum_strings=("Not Moving",
-                                                                "Moving"),
-                                                  dtype=ChannelType.ENUM)
-    motor_done: PvpropertyBoolEnum = pvproperty(value=1, name="STAT_DONE",
-                                                enum_strings=("Not Done",
-                                                              "Done"),
-                                                dtype=ChannelType.ENUM)
-    hardware_sum = pvproperty(value=0, name="HWSTATSUM", dtype=ChannelType.ENUM,
-                              enum_strings=("", "", "Fault"))
-    limit_switch_a = pvproperty(value=0, name="STAT_LIMA", dtype=ChannelType.ENUM,
-                                enum_strings=("not at limit", "at limit"))
-    limit_switch_b = pvproperty(value=0, name="STAT_LIMB", dtype=ChannelType.ENUM,
-                                enum_strings=("not at limit", "at limit"))
-    hz_per_microstep = pvproperty(value=1 / ESTIMATED_MICROSTEPS_PER_HZ,
-                                  name="SCALE", dtype=ChannelType.FLOAT)
+    motor_moving: PvpropertyBoolEnum = pvproperty(
+        value=0,
+        name="STAT_MOV",
+        enum_strings=("Not Moving", "Moving"),
+        dtype=ChannelType.ENUM,
+    )
+    motor_done: PvpropertyBoolEnum = pvproperty(
+        value=1,
+        name="STAT_DONE",
+        enum_strings=("Not Done", "Done"),
+        dtype=ChannelType.ENUM,
+    )
+    hardware_sum = pvproperty(
+        value=0,
+        name="HWSTATSUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("", "", "Fault"),
+    )
+    limit_switch_a = pvproperty(
+        value=0,
+        name="STAT_LIMA",
+        dtype=ChannelType.ENUM,
+        enum_strings=("not at limit", "at limit"),
+    )
+    limit_switch_b = pvproperty(
+        value=0,
+        name="STAT_LIMB",
+        dtype=ChannelType.ENUM,
+        enum_strings=("not at limit", "at limit"),
+    )
+    hz_per_microstep = pvproperty(
+        value=1 / ESTIMATED_MICROSTEPS_PER_HZ, name="SCALE", dtype=ChannelType.FLOAT
+    )
 
     def __init__(self, prefix, cavity_group, piezo_group):
         super().__init__(prefix)
@@ -158,7 +234,7 @@ class StepperPVGroup(PVGroup):
         print("Motor moving")
         await self.motor_moving.write("Moving")
         steps = 0
-        step_change = (move_sign_des * self.speed.value)
+        step_change = move_sign_des * self.speed.value
         freq_move_sign = move_sign_des if self.cavity_group.is_hl else -move_sign_des
         starting_detune = self.cavity_group.detune.value
 
@@ -181,18 +257,23 @@ class StepperPVGroup(PVGroup):
 
         remainder = self.step_des.value - steps
         await self.step_tot.write(self.step_tot.value + remainder)
-        step_change = (move_sign_des * remainder)
+        step_change = move_sign_des * remainder
         await self.step_signed.write(self.step_signed.value + step_change)
 
         delta = remainder // self.steps_per_hertz
         new_detune = self.cavity_group.detune.value + (freq_move_sign * delta)
 
         print(f"Piezo feedback status: {self.piezo_group.feedback_mode_stat.value}")
-        if self.piezo_group.enable_stat.value == 1 and self.piezo_group.feedback_mode_stat.value == "Feedback":
+        if (
+            self.piezo_group.enable_stat.value == 1
+            and self.piezo_group.feedback_mode_stat.value == "Feedback"
+        ):
             freq_change = new_detune - starting_detune
             voltage_change = freq_change * (1 / PIEZO_HZ_PER_VOLT)
             print(f"Changing piezo voltage by {voltage_change} V")
-            await self.piezo_group.voltage.write(self.piezo_group.voltage.value + voltage_change)
+            await self.piezo_group.voltage.write(
+                self.piezo_group.voltage.value + voltage_change
+            )
 
         await self.cavity_group.detune.write(new_detune)
         await self.cavity_group.detune_rfs.write(new_detune)
@@ -211,13 +292,24 @@ class StepperPVGroup(PVGroup):
 
 class PiezoPVGroup(PVGroup):
     enable: PvpropertyEnum = pvproperty(name="ENABLE")
-    enable_stat = pvproperty(name="ENABLESTAT", dtype=ChannelType.ENUM,
-                             value=1, enum_strings=("Disabled", "Enabled"))
-    feedback_mode = pvproperty(value=1, name="MODECTRL",
-                               dtype=ChannelType.ENUM,
-                               enum_strings=("Manual", "Feedback"))
-    feedback_mode_stat = pvproperty(name="MODESTAT", value=1, dtype=ChannelType.ENUM,
-                                    enum_strings=("Manual", "Feedback"))
+    enable_stat = pvproperty(
+        name="ENABLESTAT",
+        dtype=ChannelType.ENUM,
+        value=1,
+        enum_strings=("Disabled", "Enabled"),
+    )
+    feedback_mode = pvproperty(
+        value=1,
+        name="MODECTRL",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Manual", "Feedback"),
+    )
+    feedback_mode_stat = pvproperty(
+        name="MODESTAT",
+        value=1,
+        dtype=ChannelType.ENUM,
+        enum_strings=("Manual", "Feedback"),
+    )
     dc_setpoint = pvproperty(name="DAC_SP")
     bias_voltage = pvproperty(name="BIAS")
     prerf_test_start = pvproperty(name="TESTSTRT")
@@ -227,36 +319,43 @@ class PiezoPVGroup(PVGroup):
     prerf_chb_testmsg = pvproperty(name="CHA_TESTMSG2")
     capacitance_a = pvproperty(name="CHA_C")
     capacitance_b = pvproperty(name="CHB_C")
-    prerf_test_status: PvpropertyEnum = pvproperty(name="TESTSTS",
-                                                   dtype=ChannelType.ENUM,
-                                                   value=0,
-                                                   enum_strings=("", "Complete",
-                                                                 "Running"))
+    prerf_test_status: PvpropertyEnum = pvproperty(
+        name="TESTSTS",
+        dtype=ChannelType.ENUM,
+        value=0,
+        enum_strings=("", "Complete", "Running"),
+    )
 
     withrf_run_check = pvproperty(name="RFTESTSTRT")
-    withrf_check_status: PvpropertyEnum = pvproperty(name="RFTESTSTS",
-                                                     dtype=ChannelType.ENUM,
-                                                     value=1,
-                                                     enum_strings=("",
-                                                                   "Complete",
-                                                                   "Running"))
+    withrf_check_status: PvpropertyEnum = pvproperty(
+        name="RFTESTSTS",
+        dtype=ChannelType.ENUM,
+        value=1,
+        enum_strings=("", "Complete", "Running"),
+    )
     withrf_status = pvproperty(name="RFSTESTSTAT")
     amplifiergain_a = pvproperty(name="CHA_AMPGAIN")
     amplifiergain_b = pvproperty(name="CHB_AMPGAIN")
     withrf_push_dfgain = pvproperty(name="PUSH_DFGAIN.PROC")
     withrf_save_dfgain = pvproperty(name="SAVE_DFGAIN.PROC")
     detunegain_new = pvproperty(name="DFGAIN_NEW")
-    hardware_sum = pvproperty(value=0, name="HWSTATSUM", dtype=ChannelType.ENUM,
-                              enum_strings=("", "", "Fault"))
-    feedback_sum = pvproperty(value=0, name="FBSTATSUM",
-                              dtype=ChannelType.ENUM,
-                              enum_strings=("", "", "Fault"))
-    integrator_sp: PvpropertyFloat = pvproperty(name="INTEG_SP",
-                                                value=0,
-                                                dtype=ChannelType.FLOAT)
+    hardware_sum = pvproperty(
+        value=0,
+        name="HWSTATSUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("", "", "Fault"),
+    )
+    feedback_sum = pvproperty(
+        value=0,
+        name="FBSTATSUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("", "", "Fault"),
+    )
+    integrator_sp: PvpropertyFloat = pvproperty(
+        name="INTEG_SP", value=0, dtype=ChannelType.FLOAT
+    )
 
-    voltage: PvpropertyInteger = pvproperty(name="V", value=17,
-                                            dtype=ChannelType.INT)
+    voltage: PvpropertyInteger = pvproperty(name="V", value=17, dtype=ChannelType.INT)
 
     def __init__(self, prefix, cavity_group):
         super().__init__(prefix)
@@ -274,229 +373,313 @@ class PiezoPVGroup(PVGroup):
 
 
 class CavFaultPVGroup(PVGroup):
-    cryoSummary: PvpropertyEnum = pvproperty(value=0, name="CRYO_LTCH",
-                                             dtype=ChannelType.ENUM,
-                                             enum_strings=("Ok", "Fault"))
-    resLinkLatch: PvpropertyEnum = pvproperty(value=0, name="RESLINK_LTCH",
-                                              dtype=ChannelType.ENUM,
-                                              enum_strings=("OK", "Fault"))
-    pllLatch: PvpropertyEnum = pvproperty(value=0, name="PLL_LTCH",
-                                          dtype=ChannelType.ENUM,
-                                          enum_strings=("Ok", "Fault"))
-    pllFault: PvpropertyEnum = pvproperty(value=0, name="PLL_FLT",
-                                          dtype=ChannelType.ENUM,
-                                          enum_strings=("Ok", "Fault"))
-    iocWatchdogLatch: PvpropertyEnum = pvproperty(value=0, name="IOCWDOG_LTCH",
-                                                  dtype=ChannelType.ENUM,
-                                                  enum_strings=("OK", "Fault"))
-    couplerTemp1Latch: PvpropertyEnum = pvproperty(value=0, name="CPLRTEMP1_LTCH",
-                                                   dtype=ChannelType.ENUM,
-                                                   enum_strings=("Ok", "Fault"))
-    couplerTemp2Latch: PvpropertyEnum = pvproperty(value=0, name="CPLRTEMP2_LTCH",
-                                                   dtype=ChannelType.ENUM,
-                                                   enum_strings=("Ok", "Faulted"))
-    stepperTempLatch: PvpropertyEnum = pvproperty(value=0, name="STEPTEMP_LTCH",
-                                                  dtype=ChannelType.ENUM,
-                                                  enum_strings=("Ok", "Fault"))
-    quenchLatch: PvpropertyEnum = pvproperty(value=0, name="QUENCH_LTCH",
-                                             dtype=ChannelType.ENUM,
-                                             enum_strings=("Ok", "Fault"))
-    resChasSum: PvpropertyEnum = pvproperty(value=0, name="RESINTLK_LTCH",
-                                            dtype=ChannelType.ENUM,
-                                            enum_strings=("Ok", "Fault"))
-    cavityController: PvpropertyEnum = pvproperty(value=0, name="CTRL_SUM.SEVR",
-                                                  dtype=ChannelType.ENUM,
-                                                  enum_strings=("NO_ALARM",
-                                                                "MINOR",
-                                                                "MAJOR",
-                                                                "INVALID"))
+    cryoSummary: PvpropertyEnum = pvproperty(
+        value=0, name="CRYO_LTCH", dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
+    )
+    resLinkLatch: PvpropertyEnum = pvproperty(
+        value=0,
+        name="RESLINK_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("OK", "Fault"),
+    )
+    pllLatch: PvpropertyEnum = pvproperty(
+        value=0, name="PLL_LTCH", dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
+    )
+    pllFault: PvpropertyEnum = pvproperty(
+        value=0, name="PLL_FLT", dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
+    )
+    iocWatchdogLatch: PvpropertyEnum = pvproperty(
+        value=0,
+        name="IOCWDOG_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("OK", "Fault"),
+    )
+    couplerTemp1Latch: PvpropertyEnum = pvproperty(
+        value=0,
+        name="CPLRTEMP1_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Fault"),
+    )
+    couplerTemp2Latch: PvpropertyEnum = pvproperty(
+        value=0,
+        name="CPLRTEMP2_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Faulted"),
+    )
+    stepperTempLatch: PvpropertyEnum = pvproperty(
+        value=0,
+        name="STEPTEMP_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Fault"),
+    )
+    quenchLatch: PvpropertyEnum = pvproperty(
+        value=0,
+        name="QUENCH_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Fault"),
+    )
+    resChasSum: PvpropertyEnum = pvproperty(
+        value=0,
+        name="RESINTLK_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Ok", "Fault"),
+    )
+    cavityController: PvpropertyEnum = pvproperty(
+        value=0,
+        name="CTRL_SUM.SEVR",
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
 
-    ampFeedbackSum: PvpropertyEnum = pvproperty(value=0, name="AMPFB_SUM",
-                                                dtype=ChannelType.ENUM,
-                                                enum_strings=("Not clipped",
-                                                              "Clipped RF-only mode",
-                                                              "Clipped beam mode"))
-    phaseFeedbackSum: PvpropertyEnum = pvproperty(value=0, name="PHAFB_SUM",
-                                                  dtype=ChannelType.ENUM,
-                                                  enum_strings=("Not clipped",
-                                                                "Clipped RF-only mode",
-                                                                "Clipped beam mode"))
-    feedbackSum: PvpropertyEnum = pvproperty(value=0, name="FB_SUM",
-                                             dtype=ChannelType.ENUM,
-                                             enum_strings=("Not clipped",
-                                                           "Clipped RF-only mode",
-                                                           "Clipped beam mode"))
-    cavityCharacterization: PvpropertyEnum = pvproperty(value=0,
-                                                        name="CAV:CALSTATSUM",
-                                                        dtype=ChannelType.ENUM,
-                                                        enum_strings=("", "", "Fault"))
-    offline: PvpropertyEnum = pvproperty(name="HWMODE", value=0,
-                                         dtype=ChannelType.ENUM,
-                                         enum_strings=("Online", "Maintenance",
-                                                       "Offline", "Maintenance Done",
-                                                       "Ready"))
-    checkPhase: PvpropertyInteger = pvproperty(name="CKPSUM", value=0,
-                                               dtype=ChannelType.INT)
-    quenchInterlock: PvpropertyEnum = pvproperty(name="QUENCH_BYP_RBV", value=0,
-                                                 dtype=ChannelType.ENUM,
-                                                 enum_strings=("Not Bypassed",
-                                                               "Bypassed"))
-    amplitudeTol: PvpropertyEnum = pvproperty(name="AACTMEAN.SEVR", value=0,
-                                              dtype=ChannelType.ENUM,
-                                              enum_strings=("NO_ALARM", "MINOR",
-                                                            "MAJOR", "INVALID"))
-    phaseTol: PvpropertyEnum = pvproperty(name="PACTMEAN.SEVR", value=0,
-                                          dtype=ChannelType.ENUM,
-                                          enum_strings=("NO_ALARM", "MINOR",
-                                                        "MAJOR", "INVALID"))
+    ampFeedbackSum: PvpropertyEnum = pvproperty(
+        value=0,
+        name="AMPFB_SUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Not clipped", "Clipped RF-only mode", "Clipped beam mode"),
+    )
+    phaseFeedbackSum: PvpropertyEnum = pvproperty(
+        value=0,
+        name="PHAFB_SUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Not clipped", "Clipped RF-only mode", "Clipped beam mode"),
+    )
+    feedbackSum: PvpropertyEnum = pvproperty(
+        value=0,
+        name="FB_SUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Not clipped", "Clipped RF-only mode", "Clipped beam mode"),
+    )
+    cavityCharacterization: PvpropertyEnum = pvproperty(
+        value=0,
+        name="CAV:CALSTATSUM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("", "", "Fault"),
+    )
+    offline: PvpropertyEnum = pvproperty(
+        name="HWMODE",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=("Online", "Maintenance", "Offline", "Maintenance Done", "Ready"),
+    )
+    checkPhase: PvpropertyInteger = pvproperty(
+        name="CKPSUM", value=0, dtype=ChannelType.INT
+    )
+    quenchInterlock: PvpropertyEnum = pvproperty(
+        name="QUENCH_BYP_RBV",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=("Not Bypassed", "Bypassed"),
+    )
+    amplitudeTol: PvpropertyEnum = pvproperty(
+        name="AACTMEAN.SEVR",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
+    phaseTol: PvpropertyEnum = pvproperty(
+        name="PACTMEAN.SEVR",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
 
 
 class CavityPVGroup(PVGroup):
-    ades: PvpropertyFloat = pvproperty(value=16.6, name='ADES', precision=1)
-    aact: PvpropertyFloatRO = pvproperty(value=16.6, name='AACT',
-                                         read_only=True, precision=1)
-    amean: PvpropertyFloatRO = pvproperty(value=16.6, name='AACTMEAN',
-                                          read_only=True, precision=1)
-    gdes: PvpropertyFloat = pvproperty(value=16.0, name='GDES', precision=1)
-    gact: PvpropertyFloatRO = pvproperty(value=16.0, name='GACT',
-                                         read_only=True, precision=1)
-    rf_state_des: PvpropertyEnum = pvproperty(value=1, name='RFCTRL',
-                                              dtype=ChannelType.ENUM,
-                                              enum_strings=("Off", "On"))
+    acon: PvpropertyFloat = pvproperty(value=16.6, name="ACON", precision=2)
+    ades: PvpropertyFloat = pvproperty(value=16.6, name="ADES", precision=1)
+    aact: PvpropertyFloatRO = pvproperty(
+        value=16.6, name="AACT", read_only=True, precision=1
+    )
+    amean: PvpropertyFloatRO = pvproperty(
+        value=16.6, name="AACTMEAN", read_only=True, precision=1
+    )
+    gdes: PvpropertyFloat = pvproperty(value=16.0, name="GDES", precision=1)
+    gact: PvpropertyFloatRO = pvproperty(
+        value=16.0, name="GACT", read_only=True, precision=1
+    )
+    rf_state_des: PvpropertyEnum = pvproperty(
+        value=1, name="RFCTRL", dtype=ChannelType.ENUM, enum_strings=("Off", "On")
+    )
     # Defaults to pulse
-    rf_mode_des: PvpropertyEnum = pvproperty(value=4, name='RFMODECTRL',
-                                             dtype=ChannelType.ENUM,
-                                             enum_strings=("SELAP", "SELA",
-                                                           "SEL", "SEL Raw",
-                                                           "Pulse", "Chirp"))
+    rf_mode_des: PvpropertyEnum = pvproperty(
+        value=4,
+        name="RFMODECTRL",
+        dtype=ChannelType.ENUM,
+        enum_strings=("SELAP", "SELA", "SEL", "SEL Raw", "Pulse", "Chirp"),
+    )
     # Defaults to on
-    rf_state_act: PvpropertyEnumRO = pvproperty(value=1, name='RFSTATE',
-                                                dtype=ChannelType.ENUM,
-                                                enum_strings=("Off", "On"),
-                                                read_only=False)
+    rf_state_act: PvpropertyEnumRO = pvproperty(
+        value=1,
+        name="RFSTATE",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Off", "On"),
+        read_only=False,
+    )
     # Defaults to pulse
-    rf_mode_act: PvpropertyEnumRO = pvproperty(value=0, name='RFMODE',
-                                               dtype=ChannelType.ENUM,
-                                               enum_strings=("SELAP", "SELA",
-                                                             "SEL", "SEL Raw",
-                                                             "Pulse", "Chirp"),
-                                               read_only=True)
-    adesMaxSRF: PvpropertyFloat = pvproperty(value=21, name="ADES_MAX_SRF",
-                                             dtype=ChannelType.FLOAT)
-    adesMax: PvpropertyFloat = pvproperty(value=21, name="ADES_MAX",
-                                          dtype=ChannelType.FLOAT)
+    rf_mode_act: PvpropertyEnumRO = pvproperty(
+        value=0,
+        name="RFMODE",
+        dtype=ChannelType.ENUM,
+        enum_strings=("SELAP", "SELA", "SEL", "SEL Raw", "Pulse", "Chirp"),
+        read_only=True,
+    )
+    adesMaxSRF: PvpropertyFloat = pvproperty(
+        value=21, name="ADES_MAX_SRF", dtype=ChannelType.FLOAT
+    )
+    adesMax: PvpropertyFloat = pvproperty(
+        value=21, name="ADES_MAX", dtype=ChannelType.FLOAT
+    )
 
-    pdes: PvpropertyFloat = pvproperty(value=0.0, name='PDES')
-    pmean: PvpropertyFloat = pvproperty(value=0.0, name='PMEAN')
-    pact: PvpropertyFloatRO = pvproperty(value=0.0, name='PACT', read_only=True)
-    rfPermit: PvpropertyEnum = pvproperty(value=1, name="RFPERMIT",
-                                          dtype=ChannelType.ENUM,
-                                          enum_strings=("RF inhibit",
-                                                        "RF allow"))
-    rf_ready_for_beam: PvpropertyEnum = pvproperty(value=1, name="RFREADYFORBEAM",
-                                                   dtype=ChannelType.ENUM,
-                                                   enum_strings=("Not Ready",
-                                                                 "Ready"))
-    parked: PvpropertyEnum = pvproperty(value=0, name="PARK",
-                                        dtype=ChannelType.ENUM,
-                                        enum_strings=("Not parked", "Parked"),
-                                        record='mbbi')
+    pdes: PvpropertyFloat = pvproperty(value=0.0, name="PDES")
+    pmean: PvpropertyFloat = pvproperty(value=0.0, name="PMEAN")
+    pact: PvpropertyFloatRO = pvproperty(value=0.0, name="PACT", read_only=True)
+    rfPermit: PvpropertyEnum = pvproperty(
+        value=1,
+        name="RFPERMIT",
+        dtype=ChannelType.ENUM,
+        enum_strings=("RF inhibit", "RF allow"),
+    )
+    rf_ready_for_beam: PvpropertyEnum = pvproperty(
+        value=1,
+        name="RFREADYFORBEAM",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Not Ready", "Ready"),
+    )
+    parked: PvpropertyEnum = pvproperty(
+        value=0,
+        name="PARK",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Not parked", "Parked"),
+        record="mbbi",
+    )
 
     # Cavity Summary Display PVs
-    cudStatus: PvpropertyString = pvproperty(value="TLC", name="CUDSTATUS",
-                                             dtype=ChannelType.STRING)
-    cudSevr: PvpropertyEnum = pvproperty(value=1, name="CUDSEVR",
-                                         dtype=ChannelType.ENUM,
-                                         enum_strings=("NO_ALARM", "MINOR",
-                                                       "MAJOR", "INVALID",
-                                                       "MAINTENANCE", "OFFLINE",
-                                                       "READY"))
-    cudDesc: PvpropertyChar = pvproperty(value="Name", name="CUDDESC",
-                                         dtype=ChannelType.CHAR)
-    ssa_latch: PvpropertyEnum = pvproperty(value=1, name="SSA_LTCH",
-                                           dtype=ChannelType.ENUM,
-                                           enum_strings=("OK", "Fault"),
-                                           record="mbbi")
-    sel_aset: PvpropertyFloat = pvproperty(value=0.0, name="SEL_ASET",
-                                           dtype=ChannelType.FLOAT)
+    cudStatus: PvpropertyString = pvproperty(
+        value="TLC", name="CUDSTATUS", dtype=ChannelType.STRING
+    )
+    cudSevr: PvpropertyEnum = pvproperty(
+        value=1,
+        name="CUDSEVR",
+        dtype=ChannelType.ENUM,
+        enum_strings=(
+            "NO_ALARM",
+            "MINOR",
+            "MAJOR",
+            "INVALID",
+            "MAINTENANCE",
+            "OFFLINE",
+            "READY",
+        ),
+    )
+    cudDesc: PvpropertyChar = pvproperty(
+        value="Name", name="CUDDESC", dtype=ChannelType.CHAR
+    )
+    ssa_latch: PvpropertyEnum = pvproperty(
+        value=1,
+        name="SSA_LTCH",
+        dtype=ChannelType.ENUM,
+        enum_strings=("OK", "Fault"),
+        record="mbbi",
+    )
+    sel_aset: PvpropertyFloat = pvproperty(
+        value=0.0, name="SEL_ASET", dtype=ChannelType.FLOAT
+    )
     landing_freq = randrange(-10000, 10000)
-    detune: PvpropertyInteger = pvproperty(value=landing_freq,
-                                           name="DFBEST", dtype=ChannelType.INT)
-    detune_rfs: PvpropertyInteger = pvproperty(value=landing_freq, name="DF",
-                                               dtype=ChannelType.INT)
-    tune_config: PvpropertyEnum = pvproperty(name="TUNE_CONFIG",
-                                             value=0, dtype=ChannelType.ENUM,
-                                             enum_strings=("On resonance",
-                                                           "Cold landing",
-                                                           "Parked",
-                                                           "Other"))
-    df_cold: PvpropertyFloat = pvproperty(value=0.0, name="DF_COLD",
-                                          dtype=ChannelType.FLOAT)
-    step_temp: PvpropertyFloat = pvproperty(value=35.0, name="STEPTEMP",
-                                            dtype=ChannelType.FLOAT)
+    detune: PvpropertyInteger = pvproperty(
+        value=landing_freq, name="DFBEST", dtype=ChannelType.INT
+    )
+    detune_rfs: PvpropertyInteger = pvproperty(
+        value=landing_freq, name="DF", dtype=ChannelType.INT
+    )
+    tune_config: PvpropertyEnum = pvproperty(
+        name="TUNE_CONFIG",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=("On resonance", "Cold landing", "Parked", "Other"),
+    )
+    df_cold: PvpropertyFloat = pvproperty(
+        value=0.0, name="DF_COLD", dtype=ChannelType.FLOAT
+    )
+    step_temp: PvpropertyFloat = pvproperty(
+        value=35.0, name="STEPTEMP", dtype=ChannelType.FLOAT
+    )
 
-    fscan_stat: PvpropertyEnum = pvproperty(name="FSCAN:SEARCHSTAT",
-                                            value=0, dtype=ChannelType.ENUM,
-                                            enum_strings=("No errors",
-                                                          "None found",
-                                                          "Unknown mode",
-                                                          "Wrong freq",
-                                                          "Data nonsync"))
-    fscan_sel: PvpropertyBoolEnum = pvproperty(name="FSCAN:SEL", value=0, dtype=ChannelType.ENUM,
-                                               enum_strings=("Not Selected",
-                                                             "Selected"))
+    fscan_stat: PvpropertyEnum = pvproperty(
+        name="FSCAN:SEARCHSTAT",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=(
+            "No errors",
+            "None found",
+            "Unknown mode",
+            "Wrong freq",
+            "Data nonsync",
+        ),
+    )
+    fscan_sel: PvpropertyBoolEnum = pvproperty(
+        name="FSCAN:SEL",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=("Not Selected", "Selected"),
+    )
     fscan_res = pvproperty(name="FSCAN:8PI9MODE", value=-800000)
-    chirp_start: PvpropertyInteger = pvproperty(name="CHIRP:FREQ_START",
-                                                value=-200000)
-    chirp_stop: PvpropertyInteger = pvproperty(name="CHIRP:FREQ_STOP",
-                                               value=200000)
+    chirp_start: PvpropertyInteger = pvproperty(name="CHIRP:FREQ_START", value=-200000)
+    chirp_stop: PvpropertyInteger = pvproperty(name="CHIRP:FREQ_STOP", value=200000)
     qloaded_new = pvproperty(name="QLOADED_NEW", value=4e7)
     scale_new = pvproperty(name="CAV:CAL_SCALEB_NEW", value=30)
-    quench_bypass: PvpropertyEnum = pvproperty(name="QUENCH_BYP", value=0, dtype=ChannelType.ENUM,
-                                               enum_strings=("Not Bypassed",
-                                                             "Bypassed"))
-    interlock_reset: PvpropertyEnum = pvproperty(dtype=ChannelType.ENUM,
-                                                 name="INTLK_RESET_ALL",
-                                                 enum_strings=("", "Reset"),
-                                                 value=0)
+    quench_bypass: PvpropertyEnum = pvproperty(
+        name="QUENCH_BYP",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=("Not Bypassed", "Bypassed"),
+    )
+    interlock_reset: PvpropertyEnum = pvproperty(
+        dtype=ChannelType.ENUM,
+        name="INTLK_RESET_ALL",
+        enum_strings=("", "Reset"),
+        value=0,
+    )
     probe_cal_start: PvpropertyInteger = pvproperty(name="PROBECALSTRT", value=0)
-    probe_cal_stat: PvpropertyEnum = pvproperty(name="PROBECALSTS",
-                                                dtype=ChannelType.ENUM,
-                                                value=1,
-                                                enum_strings=("Crash",
-                                                              "Complete",
-                                                              "Running"))
-    probe_cal_time: PvpropertyString = pvproperty(name="PROBECALTS",
-                                                  dtype=ChannelType.STRING,
-                                                  value=datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
+    probe_cal_stat: PvpropertyEnum = pvproperty(
+        name="PROBECALSTS",
+        dtype=ChannelType.ENUM,
+        value=1,
+        enum_strings=("Crash", "Complete", "Running"),
+    )
+    probe_cal_time: PvpropertyString = pvproperty(
+        name="PROBECALTS",
+        dtype=ChannelType.STRING,
+        value=datetime.now().strftime("%Y-%m-%d-%H:%M:%S"),
+    )
 
-    ssa_overrange: PvpropertyInteger = pvproperty(value=0, name="ASETSUB.VALQ",
-                                                  dtype=ChannelType.INT)
+    ssa_overrange: PvpropertyInteger = pvproperty(
+        value=0, name="ASETSUB.VALQ", dtype=ChannelType.INT
+    )
 
-    push_ssa_slope: PvpropertyInteger = pvproperty(value=0,
-                                                   name="PUSH_SSA_SLOPE.PROC",
-                                                   dtype=ChannelType.INT)
-    push_loaded_q: PvpropertyInteger = pvproperty(value=0,
-                                                  name="PUSH_QLOADED.PROC",
-                                                  dtype=ChannelType.INT)
+    push_ssa_slope: PvpropertyInteger = pvproperty(
+        value=0, name="PUSH_SSA_SLOPE.PROC", dtype=ChannelType.INT
+    )
+    push_loaded_q: PvpropertyInteger = pvproperty(
+        value=0, name="PUSH_QLOADED.PROC", dtype=ChannelType.INT
+    )
 
-    push_cav_scale: PvpropertyInteger = pvproperty(value=0,
-                                                   name="PUSH_CAV_SCALE.PROC",
-                                                   dtype=ChannelType.INT)
+    push_cav_scale: PvpropertyInteger = pvproperty(
+        value=0, name="PUSH_CAV_SCALE.PROC", dtype=ChannelType.INT
+    )
 
-    data_decim_a: PvpropertyInteger = pvproperty(value=255,
-                                                 name="ACQ_DECIM_SEL.A",
-                                                 dtype=ChannelType.INT)
-    data_decim_c: PvpropertyInteger = pvproperty(value=255,
-                                                 name="ACQ_DECIM_SEL.C",
-                                                 dtype=ChannelType.INT)
+    data_decim_a: PvpropertyInteger = pvproperty(
+        value=255, name="ACQ_DECIM_SEL.A", dtype=ChannelType.INT
+    )
+    data_decim_c: PvpropertyInteger = pvproperty(
+        value=255, name="ACQ_DECIM_SEL.C", dtype=ChannelType.INT
+    )
 
-    calc_probe_q: PvpropertyInteger = pvproperty(value=0,
-                                                 name="QPROBE_CALC1.PROC",
-                                                 dtype=ChannelType.INT)
-    sel_poff: PvpropertyFloat = pvproperty(value=0.0,
-                                           name="SEL_POFF",
-                                           dtype=ChannelType.FLOAT)
+    calc_probe_q: PvpropertyInteger = pvproperty(
+        value=0, name="QPROBE_CALC1.PROC", dtype=ChannelType.INT
+    )
+    sel_poff: PvpropertyFloat = pvproperty(
+        value=0.0, name="SEL_POFF", dtype=ChannelType.FLOAT
+    )
 
     def __init__(self, prefix, isHL: bool):
         super().__init__(prefix)
@@ -511,7 +694,9 @@ class CavityPVGroup(PVGroup):
     @probe_cal_start.putter
     async def probe_cal_start(self, instance, value):
         if value == 1:
-            await self.probe_cal_time.write(datetime.now().strftime('%Y-%m-%d-%H:%M:%S'))
+            await self.probe_cal_time.write(
+                datetime.now().strftime("%Y-%m-%d-%H:%M:%S")
+            )
             await self.probe_cal_start.write(0)
 
     @ades.putter
@@ -556,64 +741,87 @@ class CavityPVGroup(PVGroup):
 
 
 class SSAPVGroup(PVGroup):
-    on: PvpropertyEnum = pvproperty(value=1, name='PowerOn',
-                                    dtype=ChannelType.ENUM,
-                                    enum_strings=("False", "True"))
-    off: PvpropertyEnum = pvproperty(value=0, name='PowerOff',
-                                     dtype=ChannelType.ENUM,
-                                     enum_strings=("False", "True"))
-    reset: PvpropertyEnum = pvproperty(value=0, name="FaultReset",
-                                       dtype=ChannelType.ENUM,
-                                       enum_strings=("Standby", "Resetting..."))
-    alarm_sum: PvpropertyEnum = pvproperty(value=0, name="AlarmSummary", dtype=ChannelType.ENUM,
-                                           enum_strings=("NO_ALARM", "MINOR",
-                                                         "MAJOR", "INVALID"))
-    status_msg: PvpropertyEnum = pvproperty(value=3, name='StatusMsg',
-                                            dtype=ChannelType.ENUM,
-                                            enum_strings=("Unknown", "Faulted",
-                                                          "SSA Off",
-                                                          "SSA On",
-                                                          "Resetting Faults...",
-                                                          "Powering ON...",
-                                                          "Powering Off...",
-                                                          "Fault Reset Failed...",
-                                                          "Power On Failed...",
-                                                          "Power Off Failed...",
-                                                          "Rebooting SSA...",
-                                                          "Rebooting X-Port...",
-                                                          "Resetting Processor..."))
+    on: PvpropertyEnum = pvproperty(
+        value=1, name="PowerOn", dtype=ChannelType.ENUM, enum_strings=("False", "True")
+    )
+    off: PvpropertyEnum = pvproperty(
+        value=0, name="PowerOff", dtype=ChannelType.ENUM, enum_strings=("False", "True")
+    )
+    reset: PvpropertyEnum = pvproperty(
+        value=0,
+        name="FaultReset",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Standby", "Resetting..."),
+    )
+    alarm_sum: PvpropertyEnum = pvproperty(
+        value=0,
+        name="AlarmSummary",
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
+    status_msg: PvpropertyEnum = pvproperty(
+        value=3,
+        name="StatusMsg",
+        dtype=ChannelType.ENUM,
+        enum_strings=(
+            "Unknown",
+            "Faulted",
+            "SSA Off",
+            "SSA On",
+            "Resetting Faults...",
+            "Powering ON...",
+            "Powering Off...",
+            "Fault Reset Failed...",
+            "Power On Failed...",
+            "Power Off Failed...",
+            "Rebooting SSA...",
+            "Rebooting X-Port...",
+            "Resetting Processor...",
+        ),
+    )
 
-    cal_start: PvpropertyEnum = pvproperty(value=0, name="CALSTRT",
-                                           dtype=ChannelType.ENUM,
-                                           enum_strings=("Start", "Start"))
-    cal_status: PvpropertyEnum = pvproperty(value=1, name="CALSTS",
-                                            dtype=ChannelType.ENUM,
-                                            enum_strings=("Crash", "Complete",
-                                                          "Running"))
-    cal_stat: PvpropertyEnum = pvproperty(value=0, dtype=ChannelType.ENUM,
-                                          name="CALSTAT",
-                                          enum_strings=("Success", "Crash"))
-    slope_old: PvpropertyFloat = pvproperty(value=0.0, name="SLOPE",
-                                            dtype=ChannelType.FLOAT)
-    slope_new: PvpropertyFloat = pvproperty(value=0.0, name="SLOPE_NEW",
-                                            dtype=ChannelType.FLOAT)
-    drive_max: PvpropertyFloat = pvproperty(name="DRV_MAX_REQ", value=0.8,
-                                            dtype=ChannelType.FLOAT)
-    drive_max_save: PvpropertyFloat = pvproperty(name="DRV_MAX_SAVE", value=0.8,
-                                                 dtype=ChannelType.FLOAT)
-    power: PvpropertyFloat = pvproperty(name="CALPWR", value=4000,
-                                        dtype=ChannelType.FLOAT)
+    cal_start: PvpropertyEnum = pvproperty(
+        value=0, name="CALSTRT", dtype=ChannelType.ENUM, enum_strings=("Start", "Start")
+    )
+    cal_status: PvpropertyEnum = pvproperty(
+        value=1,
+        name="CALSTS",
+        dtype=ChannelType.ENUM,
+        enum_strings=("Crash", "Complete", "Running"),
+    )
+    cal_stat: PvpropertyEnum = pvproperty(
+        value=0,
+        dtype=ChannelType.ENUM,
+        name="CALSTAT",
+        enum_strings=("Success", "Crash"),
+    )
+    slope_old: PvpropertyFloat = pvproperty(
+        value=0.0, name="SLOPE", dtype=ChannelType.FLOAT
+    )
+    slope_new: PvpropertyFloat = pvproperty(
+        value=0.0, name="SLOPE_NEW", dtype=ChannelType.FLOAT
+    )
+    drive_max: PvpropertyFloat = pvproperty(
+        name="DRV_MAX_REQ", value=0.8, dtype=ChannelType.FLOAT
+    )
+    drive_max_save: PvpropertyFloat = pvproperty(
+        name="DRV_MAX_SAVE", value=0.8, dtype=ChannelType.FLOAT
+    )
+    power: PvpropertyFloat = pvproperty(
+        name="CALPWR", value=4000, dtype=ChannelType.FLOAT
+    )
 
-    nirp: PvpropertyEnum = pvproperty(value=1, name="NRP_PRMT",
-                                      dtype=ChannelType.ENUM,
-                                      enum_strings=("FAULT", "OK"))
-    fault_sum: PvpropertyEnum = pvproperty(value=0, name="FaultSummary.SEVR",
-                                           dtype=ChannelType.ENUM,
-                                           enum_strings=("NO_ALARM", "MINOR",
-                                                         "MAJOR", "INVALID"))
+    nirp: PvpropertyEnum = pvproperty(
+        value=1, name="NRP_PRMT", dtype=ChannelType.ENUM, enum_strings=("FAULT", "OK")
+    )
+    fault_sum: PvpropertyEnum = pvproperty(
+        value=0,
+        name="FaultSummary.SEVR",
+        dtype=ChannelType.ENUM,
+        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
 
     def __init__(self, prefix, cavityGroup: CavityPVGroup):
-
         super().__init__(prefix)
         self.cavityGroup: CavityPVGroup = cavityGroup
 
@@ -630,7 +838,7 @@ class SSAPVGroup(PVGroup):
         print("Calibration Status: ", self.cal_status.value)
         await self.slope_new.write(uniform(0.5, 1.5))
         print("New Slope: ", self.slope_new.value)
-        if random() < .2:
+        if random() < 0.2:
             await self.cal_stat.write("Crash")
             print("Calibration Crashed")
         else:
@@ -661,21 +869,37 @@ class SSAPVGroup(PVGroup):
 
 
 class PPSPVGroup(PVGroup):
-    ready_a = pvproperty(value=1, dtype=ChannelType.ENUM,
-                         name="BeamReadyA",
-                         enum_strings=("Not_Ready", "Ready"), record="mbbi")
-    ready_b = pvproperty(value=1, dtype=ChannelType.ENUM,
-                         name="BeamReadyB",
-                         enum_strings=("Not_Ready", "Ready"), record="mbbi")
+    ready_a = pvproperty(
+        value=1,
+        dtype=ChannelType.ENUM,
+        name="BeamReadyA",
+        enum_strings=("Not_Ready", "Ready"),
+        record="mbbi",
+    )
+    ready_b = pvproperty(
+        value=1,
+        dtype=ChannelType.ENUM,
+        name="BeamReadyB",
+        enum_strings=("Not_Ready", "Ready"),
+        record="mbbi",
+    )
 
 
 class BSOICPVGroup(PVGroup):
-    sum_a = pvproperty(value=1, dtype=ChannelType.ENUM,
-                       name="SumyA",
-                       enum_strings=("FAULT", "OK"), record="mbbi")
-    sum_b = pvproperty(value=1, dtype=ChannelType.ENUM,
-                       name="SumyB",
-                       enum_strings=("FAULT", "OK"), record="mbbi")
+    sum_a = pvproperty(
+        value=1,
+        dtype=ChannelType.ENUM,
+        name="SumyA",
+        enum_strings=("FAULT", "OK"),
+        record="mbbi",
+    )
+    sum_b = pvproperty(
+        value=1,
+        dtype=ChannelType.ENUM,
+        name="SumyB",
+        enum_strings=("FAULT", "OK"),
+        record="mbbi",
+    )
 
 
 class CavityService(Service):
@@ -684,10 +908,9 @@ class CavityService(Service):
         self["PHYS:SYS0:1:SC_CAV_QNCH_RESET_HEARTBEAT"] = ChannelInteger(value=0)
         self["PHYS:SYS0:1:SC_CAV_FAULT_HEARTBEAT"] = ChannelInteger(value=0)
 
-        self["ALRM:SYS0:SC_CAV_FAULT:ALHBERR"] = ChannelEnum(enum_strings=("RUNNING",
-                                                                           "NOT_RUNNING",
-                                                                           "INVALID"),
-                                                             value=0)
+        self["ALRM:SYS0:SC_CAV_FAULT:ALHBERR"] = ChannelEnum(
+            enum_strings=("RUNNING", "NOT_RUNNING", "INVALID"), value=0
+        )
 
         self.add_pvs(BSOICPVGroup(prefix="BSOC:SYSW:2:"))
 
@@ -701,14 +924,16 @@ class CavityService(Service):
                 cm_list += L1BHL
                 self[f"ACCL:{linac_name}:1:HL_AACTMEANSUM"] = ChannelFloat(value=0.0)
             for cm_name in cm_list:
-
                 is_hl = cm_name in L1BHL
                 heater_prefix = f"CPIC:CM{cm_name}:0000:EHCV:"
                 self.add_pvs(HeaterPVGroup(prefix=heater_prefix))
 
-                self[f"CRYO:CM{cm_name}:0:CAS_ACCESS"] = ChannelEnum(enum_strings=("Close", "Open"),
-                                                                     value=1)
-                self[f"ACCL:{linac_name}:{cm_name}00:ADES_MAX"] = ChannelFloat(value=168.0)
+                self[f"CRYO:CM{cm_name}:0:CAS_ACCESS"] = ChannelEnum(
+                    enum_strings=("Close", "Open"), value=1
+                )
+                self[f"ACCL:{linac_name}:{cm_name}00:ADES_MAX"] = ChannelFloat(
+                    value=168.0
+                )
 
                 cryo_prefix = f"CLL:CM{cm_name}:2601:US:"
                 cm_prefix = f"ACCL:{linac_name}:{cm_name}"
@@ -723,15 +948,21 @@ class CavityService(Service):
 
                     cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
-                    self.add_pvs(SSAPVGroup(prefix=cav_prefix + "SSA:",
-                                            cavityGroup=cavityGroup))
+                    self.add_pvs(
+                        SSAPVGroup(prefix=cav_prefix + "SSA:", cavityGroup=cavityGroup)
+                    )
 
-                    piezo_group = PiezoPVGroup(prefix=cav_prefix + "PZT:",
-                                               cavity_group=cavityGroup)
+                    piezo_group = PiezoPVGroup(
+                        prefix=cav_prefix + "PZT:", cavity_group=cavityGroup
+                    )
                     self.add_pvs(piezo_group)
-                    self.add_pvs(StepperPVGroup(prefix=cav_prefix + "STEP:",
-                                                cavity_group=cavityGroup,
-                                                piezo_group=piezo_group))
+                    self.add_pvs(
+                        StepperPVGroup(
+                            prefix=cav_prefix + "STEP:",
+                            cavity_group=cavityGroup,
+                            piezo_group=piezo_group,
+                        )
+                    )
                     self.add_pvs(CavFaultPVGroup(prefix=cav_prefix))
 
                     self.add_pvs(JTPVGroup(prefix=jt_prefix))
@@ -757,10 +988,10 @@ def main():
     service = CavityService()
     get_event_loop()
     _, run_options = ioc_arg_parser(
-        default_prefix='',
-        desc="Simulated CM Cavity Service")
+        default_prefix="", desc="Simulated CM Cavity Service"
+    )
     run(service, **run_options)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
