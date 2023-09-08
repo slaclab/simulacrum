@@ -1,4 +1,4 @@
-from asyncio import get_event_loop, sleep
+from asyncio import create_subprocess_exec, get_event_loop, sleep
 from datetime import datetime
 from random import random, randrange, uniform
 
@@ -17,12 +17,8 @@ from caproto.server import (
     pvproperty,
     run,
 )
-from lcls_tools.superconducting.sc_linac_utils import (
-    L1BHL,
-    LINAC_TUPLES,
-    ESTIMATED_MICROSTEPS_PER_HZ,
-    PIEZO_HZ_PER_VOLT,
-)
+from lcls_tools.superconducting.sc_linac_utils import (ESTIMATED_MICROSTEPS_PER_HZ, L1BHL, LINAC_TUPLES,
+                                                       PIEZO_HZ_PER_VOLT)
 
 from simulacrum import Service
 
@@ -48,7 +44,7 @@ class AutoSetupPVGroup(PVGroup):
         dtype=ChannelType.ENUM,
         enum_strings=("Ready", "Running", "Error"),
     )
-    status_message: PvpropertyString = pvproperty(name="MSG", value="Ready")
+    status_message: PvpropertyChar = pvproperty(name="MSG", value="Ready", dtype=ChannelType.CHAR)
     abort: PvpropertyBoolEnum = pvproperty(name="ABORT")
     shut_off: PvpropertyBoolEnum = pvproperty(name="SHUTOFF")
 
@@ -58,6 +54,32 @@ class AutoSetupPVGroup(PVGroup):
     cav_char: PvpropertyEnum = pvproperty(name="SETUP_CHARREQ")
     ramp: PvpropertyEnum = pvproperty(name="SETUP_RAMPREQ")
     shutdown: PvpropertyBoolEnum = pvproperty(name="OFFSTRT")
+    
+    def __init__(self, prefix: str, cm_name: str, cav_num: int):
+        super().__init__(prefix)
+        self.cm_name: str = cm_name
+        self.cav_num: int = cav_num
+    
+    @status.putter
+    async def status(self, instance, value):
+        if isinstance(value, int):
+            await self.status_sevr.write(value)
+        else:
+            await self.status_sevr.write(["Ready", "Running", "Error"].index(value))
+            
+    @start.putter
+    async def start(self, instance, value):
+        process = await create_subprocess_exec("python",
+                                               "/Users/zacarias/srf/auto_setup/launcher.py",
+                                               f"-cm={self.cm_name}",
+                                               f"-cav={self.cav_num}")
+    
+    @shutdown.putter
+    async def shutdown(self, instance, value):
+        process = await create_subprocess_exec("python",
+                                               "/Users/zacarias/srf/auto_setup/launcher.py",
+                                               f"-cm={self.cm_name}",
+                                               f"-cav={self.cav_num}", "-off")
 
 
 class HeaterPVGroup(PVGroup):
@@ -976,7 +998,9 @@ class CavityService(Service):
 
                     self.add_pvs(HWIPVGroup(prefix=hwi_prefix))
                     self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
-                    self.add_pvs(AutoSetupPVGroup(prefix=cav_prefix + "AUTO:"))
+                    self.add_pvs(AutoSetupPVGroup(prefix=cav_prefix + "AUTO:",
+                                                  cm_name=cm_name,
+                                                  cav_num=cav_num))
 
                 self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
                 self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
