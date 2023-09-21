@@ -35,6 +35,18 @@ class HeaterPVGroup(PVGroup):
     manual: PvpropertyBoolEnum = pvproperty(name="MANUAL")
     sequencer: PvpropertyBoolEnum = pvproperty(name="SEQUENCER")
 
+    @manual.putter
+    async def manual(self, instance, value):
+        if value == 1:
+            await self.mode.write(0)
+            await self.mode_string.write("MANUAL")
+
+    @sequencer.putter
+    async def sequencer(self, instance, value):
+        if value == 1:
+            await self.mode.write(1)
+            await self.mode_string.write("SEQUENCER")
+
 
 class JTPVGroup(PVGroup):
     readback = pvproperty(name="ORBV", value=30.0)
@@ -44,6 +56,10 @@ class JTPVGroup(PVGroup):
     mode = pvproperty(name="MODE", value=0)
     man_pos = pvproperty(name="MANPOS_RQST", value=40.0)
     mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="AUTO")
+
+    @man_pos.putter
+    async def man_pos(self, instance, value):
+        await self.readback.write(value)
 
 
 class LiquidLevelPVGroup(PVGroup):
