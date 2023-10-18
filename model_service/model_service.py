@@ -68,6 +68,8 @@ class ModelService:
         self.design_rmat_pv = SharedPV(nt=self.rmat_table, 
                            initial=initial_rmat_table,
                            loop=self.loop)
+        self.screens = self.get_screens()
+        self.bpms = self.get_bpms()
         self.recalc_needed = False
         self.pva_needs_refresh = False
         self.need_zmq_broadcast = False
@@ -208,6 +210,9 @@ class ModelService:
         self.recalc_needed = True
         self.pva_needs_refresh = True
         self.need_zmq_broadcast = True
+
+    def get_bpms(self):
+        return [row.split()[3] for row in self.tao_cmd("show data orbit.x")[3:-2]]
     
     def get_orbit(self):
         start_time = time.time()
@@ -218,27 +223,32 @@ class ModelService:
         y_orb_text = self.tao_cmd("show data orbit.y")[3:-2]
         y_orb = _orbit_array_from_text(y_orb_text)
         #Get e_tot, which we use to see if the single particle beam is dead
-        e_text = self.tao_cmd("show data orbit.e")[3:-2]
-        e = _orbit_array_from_text(e_text)
+        e =  np.array([float(self.tao_cmd(f'python ele:param {bpm}|model e_tot')[0].split(';')[3]) for bpm in self.bpms])
         end_time = time.time()
         L.debug("get_orbit took %f seconds", end_time-start_time)
         return np.stack((x_orb, y_orb, e))
 
+    def get_screens(self):
+        screen_elements = self.tao_cmd('show ele monitor::YAG*,monitor::OTR*')[:-1]
+        zs = [float(row.split()[2]) for row in screen_elements]
+        names = [row.split()[1] for row in screen_elements]
+        return np.sort(np.array(
+            [(z, name) for z, name in zip(zs, names)],
+            dtype=[('z', 'float32'), ('ele', 'U60')]), order='z')
+
     def get_prof_orbit(self):
-        #Get X Orbit
-        x_orb_text = self.tao_cmd("show data orbit.profx")[3:-2]
-        x_orb = _orbit_array_from_text(x_orb_text)
-        #Get Y Orbit
-        y_orb_text = self.tao_cmd("show data orbit.profy")[3:-2]
-        y_orb = _orbit_array_from_text(y_orb_text)
+        # get x,y positions at each screen
+        orbs = [self.tao_cmd(f'python ele:orbit {screen}|model') for _,screen in self.screens]
+        x_orb = np.array([float(orb[0].split(';')[3]) for orb in orbs])*1e3
+        y_orb = np.array([float(orb[2].split(';')[3]) for orb in orbs])*1e3
         return np.stack((x_orb, y_orb))
     
     def get_twiss(self):
-        twiss_text = self.tao_cmd("show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b UNDSTART")
-        if "ERROR" in twiss_text[0]:
-            twiss_text = self.tao_cmd("show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b BEGUNDH")
-        if "ERROR" in twiss_text[0]:
-            twiss_text = self.tao_cmd("show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b BEGUNDS")
+        if   self.name in ['CU_HXR', 'SC_HXR']: und_start = 'BEGUNDH'
+        elif self.name in ['CU_SXR', 'SC_SXR']: und_start = 'BEGUNDS'
+        elif self.name == 'LCLS_CLASSIC': und_start = 'UNDSTART'
+        else: und_start = 'BEGINNING'
+        twiss_text = self.tao_cmd(f"show lat -no_label_lines -at alpha_a -at beta_a -at alpha_b -at beta_b {und_start}")
         #format to list of comma separated values
         #msg='twiss from get_twiss: {}'.format(twiss_text)
         #L.info(msg)
@@ -330,6 +340,7 @@ class ModelService:
                     retval = self.tao_cmd(p['val'])
                     await s.send_pyobj({'status': 'ok', 'result': retval})
                 except Exception as e:
+                    L.error("Tao command failed: {}".format(e))
                     await s.send_pyobj({'status': 'fail', 'err': e})
             elif p['cmd'] == 'send_orbit':
                 self.model_changed() #Sets the flag that will cause an orbit broadcast
@@ -350,6 +361,7 @@ class ModelService:
                     results = self.tao_batch(p['val'])
                     await s.send_pyobj({'status': 'ok', 'result': results})
                 except Exception as e:
+                    L.error("Tao batch command failed: {}".format(e))
                     await s.send_pyobj({'status': 'fail', 'err': e})
 
 def _orbit_array_from_text(text):
