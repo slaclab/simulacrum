@@ -5,12 +5,12 @@ from random import random, randrange, uniform
 from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
 from caproto.server import (PVGroup, PvpropertyBoolEnum, PvpropertyChar,
                             PvpropertyEnum, PvpropertyEnumRO, PvpropertyFloat,
-                            PvpropertyFloatRO, PvpropertyInteger,
+                            PvpropertyFloatRO, PvpropertyInteger, PvpropertyDouble,
                             PvpropertyString, ioc_arg_parser, pvproperty, run)
-
 from lcls_tools.superconducting.sc_linac_utils import (L1BHL, LINAC_TUPLES,
                                                        ESTIMATED_MICROSTEPS_PER_HZ,
                                                        PIEZO_HZ_PER_VOLT)
+
 from simulacrum import Service
 
 
@@ -43,7 +43,7 @@ class CryomodulePVGroup(PVGroup):
                      record="ai")
     aact_mean_sum = pvproperty(value=0, name="AACTMEANSUM")
     # TODO - find this and see what type pv it is on bcs/ops_lcls2_bcs_main.edl
-    bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.INT)
+    bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.DOUBLE)
 
 
 class CryoPVGroup(PVGroup):
@@ -58,7 +58,7 @@ class HOMPVGroup(PVGroup):
                                enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
 
 
-class HWIPVGroup(PVGroup):
+class RACKPVGroup(PVGroup):
     hwi = pvproperty(value=0, name="HWINITSUM", dtype=ChannelType.ENUM,
                      enum_strings=("Ok", "HW Init running", "LLRF chassis problem"),
                      record="mbbi")
@@ -70,6 +70,8 @@ class HWIPVGroup(PVGroup):
     fscan_overlap = pvproperty(value=0, name="FSCAN:MODE_OVERLAP")
     prl = pvproperty(value=0, name="PRLSUM.SEVR", dtype=ChannelType.ENUM,
                      enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"))
+    pjt: PvpropertyDouble = pvproperty(value=0, name="PRLJITSUM",
+                                       dtype=ChannelType.DOUBLE)
 
 
 class BeamlineVacuumPVGroup(PVGroup):
@@ -115,7 +117,7 @@ class StepperPVGroup(PVGroup):
                                 enum_strings=("not at limit", "at limit"))
     limit_switch_b = pvproperty(value=0, name="STAT_LIMB", dtype=ChannelType.ENUM,
                                 enum_strings=("not at limit", "at limit"))
-    hz_per_microstep = pvproperty(value=1/ESTIMATED_MICROSTEPS_PER_HZ,
+    hz_per_microstep = pvproperty(value=1 / ESTIMATED_MICROSTEPS_PER_HZ,
                                   name="SCALE", dtype=ChannelType.FLOAT)
 
     def __init__(self, prefix, cavity_group, piezo_group):
@@ -163,7 +165,7 @@ class StepperPVGroup(PVGroup):
         print(f"Piezo feedback status: {self.piezo_group.feedback_mode_stat.value}")
         if self.piezo_group.enable_stat.value == 1 and self.piezo_group.feedback_mode_stat.value == "Feedback":
             freq_change = new_detune - starting_detune
-            voltage_change = freq_change * (1/PIEZO_HZ_PER_VOLT)
+            voltage_change = freq_change * (1 / PIEZO_HZ_PER_VOLT)
             print(f"Changing piezo voltage by {voltage_change} V")
             await self.piezo_group.voltage.write(self.piezo_group.voltage.value + voltage_change)
 
@@ -180,6 +182,7 @@ class StepperPVGroup(PVGroup):
     @move_pos.putter
     async def move_pos(self, instance, value):
         await self.move(1)
+
 
 class PiezoPVGroup(PVGroup):
     enable: PvpropertyEnum = pvproperty(name="ENABLE")
@@ -321,6 +324,11 @@ class CavFaultPVGroup(PVGroup):
                                           dtype=ChannelType.ENUM,
                                           enum_strings=("NO_ALARM", "MINOR",
                                                         "MAJOR", "INVALID"))
+    localOscillator: PvpropertyEnum = pvproperty(name="LO_LTCH", value=0,
+                                                 dtype=ChannelType.ENUM,
+                                                 enum_strings=("Ok", "Fault"))
+    waveformAcquisition: PvpropertyDouble = pvproperty(name="WFACQSUM", value=0,
+                                                       dtype=ChannelType.DOUBLE)
 
 
 class CavityPVGroup(PVGroup):
@@ -711,19 +719,20 @@ class CavityService(Service):
                     else:
                         hwi_prefix = cm_prefix + "00:RACKB:"
 
-                    self.add_pvs(HWIPVGroup(prefix=hwi_prefix))
+                    self.add_pvs(RACKPVGroup(prefix=hwi_prefix))
                     self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(CouplerVacuumPVGroup(prefix=cm_prefix + "10:"))
                     self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
                     self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
 
+
 def main():
     service = CavityService()
     get_event_loop()
     _, run_options = ioc_arg_parser(
-            default_prefix='',
-            desc="Simulated CM Cavity Service")
+        default_prefix='',
+        desc="Simulated CM Cavity Service")
     run(service, **run_options)
 
 
