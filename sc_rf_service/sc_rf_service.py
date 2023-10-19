@@ -329,6 +329,8 @@ class CavFaultPVGroup(PVGroup):
                                                  enum_strings=("Ok", "Fault"))
     waveformAcquisition: PvpropertyDouble = pvproperty(name="WFACQSUM", value=0,
                                                        dtype=ChannelType.DOUBLE)
+    detune_feedback: PvpropertyDouble = pvproperty(name="FBSTATSUM", value=0,
+                                                   dtype=ChannelType.DOUBLE)
 
 
 class CavityPVGroup(PVGroup):
@@ -655,6 +657,19 @@ class BSOICPVGroup(PVGroup):
                        enum_strings=("FAULT", "OK"), record="mbbi")
 
 
+class MAGNETPVGroup(PVGroup):
+    cm_magnet_ps: PvpropertyEnum = pvproperty(value=0, dtype=ChannelType.ENUM,
+                                              name="STATMSG",
+                                              enum_strings=("Good", "BCON Warning",
+                                                            "Offline", "PAU Ctrl",
+                                                            "Turned Off", "Not Degaus'd",
+                                                            "Not Cal'd", "Feedback Ctrl",
+                                                            "PS Tripped", "DAC Error",
+                                                            "ADC Error", "Not Stdz'd",
+                                                            "Out-of-Tol", "Bad Ripple",
+                                                            "BAD BACT", "No Control"))
+
+
 class CavityService(Service):
     def __init__(self):
         super().__init__()
@@ -696,6 +711,9 @@ class CavityService(Service):
 
                     HOM_prefix = f"CTE:CM{cm_name}:1{cav_num}"
                     cryo_prefix = f"CLL:CM{cm_name}:2601:US:"
+                    xcm_prefix = f"XCOR:{linac_name}:{cm_name}"
+                    ycm_prefix = f"YCOR:{linac_name}:{cm_name}"
+                    qcm_prefix = f"QUAD:{linac_name}:{cm_name}"
 
                     cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
                     self.add_pvs(cavityGroup)
@@ -725,6 +743,10 @@ class CavityService(Service):
                     self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
                     self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
                     self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
+
+                    self.add_pvs(MAGNETPVGroup(prefix=xcm_prefix + "85:"))
+                    self.add_pvs(MAGNETPVGroup(prefix=ycm_prefix + "85:"))
+                    self.add_pvs(MAGNETPVGroup(prefix=qcm_prefix + "85:"))
 
 
 def main():
