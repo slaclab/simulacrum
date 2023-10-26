@@ -7,6 +7,7 @@ from caproto.server import (
     PVGroup,
     PvpropertyBoolEnum,
     PvpropertyChar,
+    PvpropertyDouble,
     PvpropertyEnum,
     PvpropertyEnumRO,
     PvpropertyFloat,
@@ -17,8 +18,12 @@ from caproto.server import (
     pvproperty,
     run,
 )
-from lcls_tools.superconducting.sc_linac_utils import (ESTIMATED_MICROSTEPS_PER_HZ, L1BHL, LINAC_TUPLES,
-                                                       PIEZO_HZ_PER_VOLT)
+from lcls_tools.superconducting.sc_linac_utils import (
+    ESTIMATED_MICROSTEPS_PER_HZ,
+    L1BHL,
+    LINAC_TUPLES,
+    PIEZO_HZ_PER_VOLT,
+)
 
 from simulacrum import Service
 
@@ -44,7 +49,9 @@ class AutoSetupPVGroup(PVGroup):
         dtype=ChannelType.ENUM,
         enum_strings=("Ready", "Running", "Error"),
     )
-    status_message: PvpropertyChar = pvproperty(name="MSG", value="Ready", dtype=ChannelType.CHAR)
+    status_message: PvpropertyChar = pvproperty(
+        name="MSG", value="Ready", dtype=ChannelType.CHAR
+    )
     abort: PvpropertyBoolEnum = pvproperty(name="ABORT")
     shut_off: PvpropertyBoolEnum = pvproperty(name="SHUTOFF")
 
@@ -54,32 +61,37 @@ class AutoSetupPVGroup(PVGroup):
     cav_char: PvpropertyEnum = pvproperty(name="SETUP_CHARREQ")
     ramp: PvpropertyEnum = pvproperty(name="SETUP_RAMPREQ")
     shutdown: PvpropertyBoolEnum = pvproperty(name="OFFSTRT")
-    
+
     def __init__(self, prefix: str, cm_name: str, cav_num: int):
         super().__init__(prefix)
         self.cm_name: str = cm_name
         self.cav_num: int = cav_num
-    
+
     @status.putter
     async def status(self, instance, value):
         if isinstance(value, int):
             await self.status_sevr.write(value)
         else:
             await self.status_sevr.write(["Ready", "Running", "Error"].index(value))
-            
+
     @start.putter
     async def start(self, instance, value):
-        process = await create_subprocess_exec("python",
-                                               "/Users/zacarias/srf/auto_setup/launcher.py",
-                                               f"-cm={self.cm_name}",
-                                               f"-cav={self.cav_num}")
-    
+        process = await create_subprocess_exec(
+            "python",
+            "/Users/zacarias/srf/auto_setup/launcher.py",
+            f"-cm={self.cm_name}",
+            f"-cav={self.cav_num}",
+        )
+
     @shutdown.putter
     async def shutdown(self, instance, value):
-        process = await create_subprocess_exec("python",
-                                               "/Users/zacarias/srf/auto_setup/launcher.py",
-                                               f"-cm={self.cm_name}",
-                                               f"-cav={self.cav_num}", "-off")
+        process = await create_subprocess_exec(
+            "python",
+            "/Users/zacarias/srf/auto_setup/launcher.py",
+            f"-cm={self.cm_name}",
+            f"-cav={self.cav_num}",
+            "-off",
+        )
 
 
 class HeaterPVGroup(PVGroup):
@@ -111,7 +123,7 @@ class CryomodulePVGroup(PVGroup):
     )
     aact_mean_sum = pvproperty(value=0, name="AACTMEANSUM")
     # TODO - find this and see what type pv it is on bcs/ops_lcls2_bcs_main.edl
-    bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.INT)
+    bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.DOUBLE)
 
 
 class CryoPVGroup(PVGroup):
@@ -138,7 +150,7 @@ class HOMPVGroup(PVGroup):
     )
 
 
-class HWIPVGroup(PVGroup):
+class RACKPVGroup(PVGroup):
     hwi = pvproperty(
         value=0,
         name="HWINITSUM",
@@ -161,6 +173,9 @@ class HWIPVGroup(PVGroup):
         name="PRLSUM.SEVR",
         dtype=ChannelType.ENUM,
         enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+    )
+    pjt: PvpropertyDouble = pvproperty(
+        value=0, name="PRLJITSUM", dtype=ChannelType.DOUBLE
     )
 
 
@@ -296,7 +311,6 @@ class StepperPVGroup(PVGroup):
             await self.piezo_group.voltage.write(
                 self.piezo_group.voltage.value + voltage_change
             )
-
         await self.cavity_group.detune.write(new_detune)
         await self.cavity_group.detune_rfs.write(new_detune)
 
@@ -347,7 +361,6 @@ class PiezoPVGroup(PVGroup):
         value=0,
         enum_strings=("", "Complete", "Running"),
     )
-
     withrf_run_check = pvproperty(name="RFTESTSTRT")
     withrf_check_status: PvpropertyEnum = pvproperty(
         name="RFTESTSTS",
@@ -365,13 +378,13 @@ class PiezoPVGroup(PVGroup):
         value=0,
         name="HWSTATSUM",
         dtype=ChannelType.ENUM,
-        enum_strings=("", "", "Fault"),
+        enum_strings=("", "Minor Fault", "Fault"),
     )
     feedback_sum = pvproperty(
         value=0,
         name="FBSTATSUM",
         dtype=ChannelType.ENUM,
-        enum_strings=("", "", "Fault"),
+        enum_strings=("", "Minor Fault", "Fault"),
     )
     integrator_sp: PvpropertyFloat = pvproperty(
         name="INTEG_SP", value=0, dtype=ChannelType.FLOAT
@@ -504,6 +517,15 @@ class CavFaultPVGroup(PVGroup):
         dtype=ChannelType.ENUM,
         enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
     )
+    localOscillator: PvpropertyEnum = pvproperty(
+        name="LO_LTCH", value=0, dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
+    )
+    waveformAcquisition: PvpropertyDouble = pvproperty(
+        name="WFACQSUM", value=0, dtype=ChannelType.DOUBLE
+    )
+    detune_feedback: PvpropertyDouble = pvproperty(
+        name="FBSTATSUM", value=0, dtype=ChannelType.DOUBLE
+    )
 
 
 class CavityPVGroup(PVGroup):
@@ -574,7 +596,6 @@ class CavityPVGroup(PVGroup):
         enum_strings=("Not parked", "Parked"),
         record="mbbi",
     )
-
     # Cavity Summary Display PVs
     cudStatus: PvpropertyString = pvproperty(
         value="TLC", name="CUDSTATUS", dtype=ChannelType.STRING
@@ -597,7 +618,7 @@ class CavityPVGroup(PVGroup):
         value="Name", name="CUDDESC", dtype=ChannelType.CHAR
     )
     ssa_latch: PvpropertyEnum = pvproperty(
-        value=1,
+        value=0,
         name="SSA_LTCH",
         dtype=ChannelType.ENUM,
         enum_strings=("OK", "Fault"),
@@ -924,6 +945,32 @@ class BSOICPVGroup(PVGroup):
     )
 
 
+class MAGNETPVGroup(PVGroup):
+    cm_magnet_ps: PvpropertyEnum = pvproperty(
+        value=0,
+        dtype=ChannelType.ENUM,
+        name="STATMSG",
+        enum_strings=(
+            "Good",
+            "BCON Warning",
+            "Offline",
+            "PAU Ctrl",
+            "Turned Off",
+            "Not Degaus'd",
+            "Not Cal'd",
+            "Feedback Ctrl",
+            "PS Tripped",
+            "DAC Error",
+            "ADC Error",
+            "Not Stdz'd",
+            "Out-of-Tol",
+            "Bad Ripple",
+            "BAD BACT",
+            "No Control",
+        ),
+    )
+
+
 class CavityService(Service):
     def __init__(self):
         super().__init__()
@@ -933,7 +980,6 @@ class CavityService(Service):
         self["ALRM:SYS0:SC_CAV_FAULT:ALHBERR"] = ChannelEnum(
             enum_strings=("RUNNING", "NOT_RUNNING", "INVALID"), value=0
         )
-
         self.add_pvs(BSOICPVGroup(prefix="BSOC:SYSW:2:"))
 
         rackA = range(1, 5)
@@ -959,6 +1005,12 @@ class CavityService(Service):
 
                 cryo_prefix = f"CLL:CM{cm_name}:2601:US:"
                 cm_prefix = f"ACCL:{linac_name}:{cm_name}"
+
+                magnet_infix = f"{linac_name}:{cm_name}85:"
+
+                self.add_pvs(MAGNETPVGroup(prefix=f"XCOR:{magnet_infix}"))
+                self.add_pvs(MAGNETPVGroup(prefix=f"YCOR:{magnet_infix}"))
+                self.add_pvs(MAGNETPVGroup(prefix=f"QUAD:{magnet_infix}"))
 
                 for cav_num in range(1, 9):
                     cav_prefix = cm_prefix + f"{cav_num}0:"
@@ -996,11 +1048,15 @@ class CavityService(Service):
                     else:
                         hwi_prefix = cm_prefix + "00:RACKB:"
 
-                    self.add_pvs(HWIPVGroup(prefix=hwi_prefix))
+                    self.add_pvs(RACKPVGroup(prefix=hwi_prefix))
                     self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
-                    self.add_pvs(AutoSetupPVGroup(prefix=cav_prefix + "AUTO:",
-                                                  cm_name=cm_name,
-                                                  cav_num=cav_num))
+                    self.add_pvs(
+                        AutoSetupPVGroup(
+                            prefix=cav_prefix + "AUTO:",
+                            cm_name=cm_name,
+                            cav_num=cav_num,
+                        )
+                    )
 
                 self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
                 self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
