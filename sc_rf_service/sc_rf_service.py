@@ -1,6 +1,7 @@
 from asyncio import create_subprocess_exec, get_event_loop, sleep
 from datetime import datetime
 from random import random, randrange, uniform
+from typing import List
 
 from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
 from caproto.server import (
@@ -40,6 +41,101 @@ class SeverityProp(pvproperty):
 
 
 class AutoSetupPVGroup(PVGroup):
+    setup_start: PvpropertyBoolEnum = pvproperty(name="SETUPSTRT")
+    setup_stop: PvpropertyBoolEnum = pvproperty(name="SETUPSTOP")
+    setup_status: PvpropertyBoolEnum = pvproperty(name="SETUPSTS")
+    setup_timestamp: PvpropertyBoolEnum = pvproperty(name="SETUPTS")
+
+    ssa_cal: PvpropertyBoolEnum = pvproperty(name="SETUP_SSAREQ", value=True)
+    tune: PvpropertyEnum = pvproperty(name="SETUP_TUNEREQ", value=True)
+    cav_char: PvpropertyEnum = pvproperty(name="SETUP_CHARREQ", value=True)
+    ramp: PvpropertyEnum = pvproperty(name="SETUP_RAMPREQ", value=True)
+
+    off_start: PvpropertyBoolEnum = pvproperty(name="OFFSTRT")
+    off_stop: PvpropertyBoolEnum = pvproperty(name="OFFSTOP")
+    off_status: PvpropertyBoolEnum = pvproperty(name="OFFSTS")
+    off_timestamp: PvpropertyBoolEnum = pvproperty(name="OFFTS")
+
+    def __init__(self, prefix: str, script_args: List[str] = None):
+        super().__init__(prefix + "AUTO:")
+        self.script_args = script_args
+
+    def trigger_setup_script(self):
+        raise NotImplementedError
+
+    def trigger_shutdown_script(self):
+        raise NotImplementedError
+
+    @setup_start.putter
+    async def setup_start(self, instance, value):
+        await self.trigger_setup_script()
+
+    @off_start.putter
+    async def off_start(self, instance, value):
+        await self.trigger_shutdown_script()
+
+
+class AutoSetupCMPVGroup(AutoSetupPVGroup):
+    def __init__(self, prefix: str, cm_name: str):
+        super().__init__(prefix)
+        self.cm_name: str = cm_name
+
+    async def trigger_setup_script(self):
+        process = await create_subprocess_exec(
+            "python",
+            "/Users/zacarias/srf/auto_setup/srf_cm_setup_launcher.py",
+            f"-cm={self.cm_name}",
+        )
+
+    async def trigger_shutdown_script(self):
+        process = await create_subprocess_exec(
+            "python",
+            "/Users/zacarias/srf/auto_setup/srf_cm_setup_launcher.py",
+            f"-cm={self.cm_name}",
+            "-off",
+        )
+
+
+class AutoSetupLinacPVGroup(AutoSetupPVGroup):
+    def __init__(self, prefix: str, linac_idx: int):
+        super().__init__(prefix)
+        self.linac_idx: int = linac_idx
+
+    async def trigger_setup_script(self):
+        process = await create_subprocess_exec(
+            "python",
+            "/Users/zacarias/srf/auto_setup/srf_linac_setup_launcher.py",
+            f"-cm={self.linac_idx}",
+        )
+
+    async def trigger_shutdown_script(self):
+        process = await create_subprocess_exec(
+            "python",
+            "/Users/zacarias/srf/auto_setup/srf_linac_setup_launcher.py",
+            f"-cm={self.linac_idx}",
+            "-off",
+        )
+
+
+class AutoSetupGlobalPVGroup(AutoSetupPVGroup):
+    def __init__(self, prefix: str):
+        super().__init__(prefix)
+
+    async def trigger_setup_script(self):
+        process = await create_subprocess_exec(
+            "python",
+            "/Users/zacarias/srf/auto_setup/srf_global_setup_launcher.py",
+        )
+
+    async def trigger_shutdown_script(self):
+        process = await create_subprocess_exec(
+            "python",
+            "/Users/zacarias/srf/auto_setup/srf_global_setup_launcher.py",
+            "-off",
+        )
+
+
+class AutoSetupCavityPVGroup(AutoSetupPVGroup):
     progress: PvpropertyFloat = pvproperty(
         name="PROG", value=0.0, dtype=ChannelType.FLOAT
     )
@@ -52,15 +148,18 @@ class AutoSetupPVGroup(PVGroup):
     status_message: PvpropertyChar = pvproperty(
         name="MSG", value="Ready", dtype=ChannelType.CHAR
     )
-    abort: PvpropertyBoolEnum = pvproperty(name="ABORT")
-    shut_off: PvpropertyBoolEnum = pvproperty(name="SHUTOFF")
 
-    start: PvpropertyBoolEnum = pvproperty(name="SETUPSTRT")
+    time_stamp: PvpropertyChar = pvproperty(
+        name="TS",
+        value=datetime.now().strftime("%m/%d/%y %H:%M:%S.%f"),
+        dtype=ChannelType.CHAR,
+    )
+    setup_stop: PvpropertyBoolEnum = pvproperty(name="SETUPSTOP")
+
     ssa_cal: PvpropertyBoolEnum = pvproperty(name="SETUP_SSAREQ")
     tune: PvpropertyEnum = pvproperty(name="SETUP_TUNEREQ")
     cav_char: PvpropertyEnum = pvproperty(name="SETUP_CHARREQ")
     ramp: PvpropertyEnum = pvproperty(name="SETUP_RAMPREQ")
-    shutdown: PvpropertyBoolEnum = pvproperty(name="OFFSTRT")
 
     def __init__(self, prefix: str, cm_name: str, cav_num: int):
         super().__init__(prefix)
@@ -74,20 +173,18 @@ class AutoSetupPVGroup(PVGroup):
         else:
             await self.status_sevr.write(["Ready", "Running", "Error"].index(value))
 
-    @start.putter
-    async def start(self, instance, value):
+    async def trigger_setup_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/launcher.py",
+            "/Users/zacarias/srf/auto_setup/srf_cavity_setup_launcher.py",
             f"-cm={self.cm_name}",
             f"-cav={self.cav_num}",
         )
 
-    @shutdown.putter
-    async def shutdown(self, instance, value):
+    async def trigger_shutdown_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/launcher.py",
+            "/Users/zacarias/srf/auto_setup/srf_cavity_setup_launcher.py",
             f"-cm={self.cm_name}",
             f"-cav={self.cav_num}",
             "-off",
@@ -985,12 +1082,19 @@ class CavityService(Service):
         rackA = range(1, 5)
         self.add_pvs(PPSPVGroup(prefix="PPS:SYSW:1:"))
 
-        for linac_name, cm_list in LINAC_TUPLES:
-            self[f"ACCL:{linac_name}:1:AACTMEANSUM"] = ChannelFloat(value=0.0)
-            self[f"ACCL:{linac_name}:1:ADES_MAX"] = ChannelFloat(value=2800.0)
+        self.add_pvs(AutoSetupGlobalPVGroup(prefix="ACCL:SYS0:SC:"))
+
+        for linac_idx, (linac_name, cm_list) in enumerate(LINAC_TUPLES):
+            linac_prefix = f"ACCL:{linac_name}:1:"
+            self[f"{linac_prefix}AACTMEANSUM"] = ChannelFloat(value=0.0)
+            self[f"{linac_prefix}ADES_MAX"] = ChannelFloat(value=2800.0)
             if linac_name == "L1B":
                 cm_list += L1BHL
-                self[f"ACCL:{linac_name}:1:HL_AACTMEANSUM"] = ChannelFloat(value=0.0)
+                self[f"{linac_prefix}HL_AACTMEANSUM"] = ChannelFloat(value=0.0)
+
+            self.add_pvs(
+                AutoSetupLinacPVGroup(prefix=linac_prefix, linac_idx=linac_idx)
+            )
             for cm_name in cm_list:
                 is_hl = cm_name in L1BHL
                 heater_prefix = f"CPIC:CM{cm_name}:0000:EHCV:"
@@ -1011,6 +1115,10 @@ class CavityService(Service):
                 self.add_pvs(MAGNETPVGroup(prefix=f"XCOR:{magnet_infix}"))
                 self.add_pvs(MAGNETPVGroup(prefix=f"YCOR:{magnet_infix}"))
                 self.add_pvs(MAGNETPVGroup(prefix=f"QUAD:{magnet_infix}"))
+
+                self.add_pvs(
+                    AutoSetupCMPVGroup(prefix=cm_prefix + "00:", cm_name=cm_name)
+                )
 
                 for cav_num in range(1, 9):
                     cav_prefix = cm_prefix + f"{cav_num}0:"
@@ -1051,8 +1159,8 @@ class CavityService(Service):
                     self.add_pvs(RACKPVGroup(prefix=hwi_prefix))
                     self.add_pvs(HOMPVGroup(prefix=HOM_prefix))
                     self.add_pvs(
-                        AutoSetupPVGroup(
-                            prefix=cav_prefix + "AUTO:",
+                        AutoSetupCavityPVGroup(
+                            prefix=cav_prefix,
                             cm_name=cm_name,
                             cav_num=cav_num,
                         )
