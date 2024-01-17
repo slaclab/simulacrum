@@ -56,6 +56,12 @@ class AutoSetupPVGroup(PVGroup):
     off_status: PvpropertyBoolEnum = pvproperty(name="OFFSTS")
     off_timestamp: PvpropertyBoolEnum = pvproperty(name="OFFTS")
 
+    abort: PvpropertyEnum = pvproperty(
+        name="ABORT",
+        dtype=ChannelType.ENUM,
+        enum_strings=("No abort request", "Abort request"),
+    )
+
     def __init__(self, prefix: str, script_args: List[str] = None):
         super().__init__(prefix + "AUTO:")
         self.script_args = script_args
