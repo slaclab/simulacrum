@@ -511,83 +511,84 @@ class PiezoPVGroup(PVGroup):
 
 
 class CavFaultPVGroup(PVGroup):
-    cryoSummary: PvpropertyEnum = pvproperty(
+    prl_fault: SeverityProp = SeverityProp(name="PRLSUM")
+    cryo_summary: PvpropertyEnum = pvproperty(
         value=0, name="CRYO_LTCH", dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
     )
-    resLinkLatch: PvpropertyEnum = pvproperty(
+    res_link_latch: PvpropertyEnum = pvproperty(
         value=0,
         name="RESLINK_LTCH",
         dtype=ChannelType.ENUM,
         enum_strings=("OK", "Fault"),
     )
-    pllLatch: PvpropertyEnum = pvproperty(
+    pll_latch: PvpropertyEnum = pvproperty(
         value=0, name="PLL_LTCH", dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
     )
-    pllFault: PvpropertyEnum = pvproperty(
+    pll_fault: PvpropertyEnum = pvproperty(
         value=0, name="PLL_FLT", dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
     )
-    iocWatchdogLatch: PvpropertyEnum = pvproperty(
+    ioc_watchdog_latch: PvpropertyEnum = pvproperty(
         value=0,
         name="IOCWDOG_LTCH",
         dtype=ChannelType.ENUM,
         enum_strings=("OK", "Fault"),
     )
-    couplerTemp1Latch: PvpropertyEnum = pvproperty(
+    coupler_temp1_latch: PvpropertyEnum = pvproperty(
         value=0,
         name="CPLRTEMP1_LTCH",
         dtype=ChannelType.ENUM,
         enum_strings=("Ok", "Fault"),
     )
-    couplerTemp2Latch: PvpropertyEnum = pvproperty(
+    coupler_temp2_latch: PvpropertyEnum = pvproperty(
         value=0,
         name="CPLRTEMP2_LTCH",
         dtype=ChannelType.ENUM,
         enum_strings=("Ok", "Faulted"),
     )
-    stepperTempLatch: PvpropertyEnum = pvproperty(
+    stepper_temp_latch: PvpropertyEnum = pvproperty(
         value=0,
         name="STEPTEMP_LTCH",
         dtype=ChannelType.ENUM,
         enum_strings=("Ok", "Fault"),
     )
-    quenchLatch: PvpropertyEnum = pvproperty(
+    quench_latch: PvpropertyEnum = pvproperty(
         value=0,
         name="QUENCH_LTCH",
         dtype=ChannelType.ENUM,
         enum_strings=("Ok", "Fault"),
     )
-    resChasSum: PvpropertyEnum = pvproperty(
+    res_chas_sum: PvpropertyEnum = pvproperty(
         value=0,
         name="RESINTLK_LTCH",
         dtype=ChannelType.ENUM,
         enum_strings=("Ok", "Fault"),
     )
-    cavityController: PvpropertyEnum = pvproperty(
+    cavity_controller: PvpropertyEnum = pvproperty(
         value=0,
         name="CTRL_SUM.SEVR",
         dtype=ChannelType.ENUM,
         enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
     )
 
-    ampFeedbackSum: PvpropertyEnum = pvproperty(
+    amp_feedback_sum: PvpropertyEnum = pvproperty(
         value=0,
         name="AMPFB_SUM",
         dtype=ChannelType.ENUM,
         enum_strings=("Not clipped", "Clipped RF-only mode", "Clipped beam mode"),
     )
-    phaseFeedbackSum: PvpropertyEnum = pvproperty(
+    phase_feedback_sum: PvpropertyEnum = pvproperty(
         value=0,
         name="PHAFB_SUM",
         dtype=ChannelType.ENUM,
         enum_strings=("Not clipped", "Clipped RF-only mode", "Clipped beam mode"),
     )
-    feedbackSum: PvpropertyEnum = pvproperty(
+    feedback_sum: PvpropertyEnum = pvproperty(
         value=0,
         name="FB_SUM",
         dtype=ChannelType.ENUM,
         enum_strings=("Not clipped", "Clipped RF-only mode", "Clipped beam mode"),
     )
-    cavityCharacterization: PvpropertyEnum = pvproperty(
+    cavity_characterization: PvpropertyEnum = pvproperty(
         value=0,
         name="CAV:CALSTATSUM",
         dtype=ChannelType.ENUM,
@@ -599,31 +600,31 @@ class CavFaultPVGroup(PVGroup):
         dtype=ChannelType.ENUM,
         enum_strings=("Online", "Maintenance", "Offline", "Maintenance Done", "Ready"),
     )
-    checkPhase: PvpropertyInteger = pvproperty(
+    check_phase: PvpropertyInteger = pvproperty(
         name="CKPSUM", value=0, dtype=ChannelType.INT
     )
-    quenchInterlock: PvpropertyEnum = pvproperty(
+    quench_interlock: PvpropertyEnum = pvproperty(
         name="QUENCH_BYP_RBV",
         value=0,
         dtype=ChannelType.ENUM,
         enum_strings=("Not Bypassed", "Bypassed"),
     )
-    amplitudeTol: PvpropertyEnum = pvproperty(
+    amplitude_tol: PvpropertyEnum = pvproperty(
         name="AACTMEAN.SEVR",
         value=0,
         dtype=ChannelType.ENUM,
         enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
     )
-    phaseTol: PvpropertyEnum = pvproperty(
+    phase_tol: PvpropertyEnum = pvproperty(
         name="PACTMEAN.SEVR",
         value=0,
         dtype=ChannelType.ENUM,
         enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
     )
-    localOscillator: PvpropertyEnum = pvproperty(
+    local_oscillator: PvpropertyEnum = pvproperty(
         name="LO_LTCH", value=0, dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
     )
-    waveformAcquisition: PvpropertyDouble = pvproperty(
+    waveform_acquisition: PvpropertyDouble = pvproperty(
         name="WFACQSUM", value=0, dtype=ChannelType.DOUBLE
     )
     detune_feedback: PvpropertyDouble = pvproperty(
