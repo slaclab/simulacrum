@@ -511,7 +511,7 @@ class PiezoPVGroup(PVGroup):
 
 
 class CavFaultPVGroup(PVGroup):
-    prl_fault: SeverityProp = SeverityProp(name="PRLSUM")
+    prl_fault: SeverityProp = SeverityProp(name="PRLSUM", value=0)
     cryo_summary: PvpropertyEnum = pvproperty(
         value=0, name="CRYO_LTCH", dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
     )
