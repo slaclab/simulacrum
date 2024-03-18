@@ -230,27 +230,12 @@ class CryomodulePVGroup(PVGroup):
 
 
 class CryoPVGroup(PVGroup):
-    uhl = pvproperty(
-        value=0,
-        name="LVL.SEVR",
-        dtype=ChannelType.ENUM,
-        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
-    )
+    uhl = SeverityProp(name="LVL", value=0)
 
 
 class HOMPVGroup(PVGroup):
-    upstreamHOM = pvproperty(
-        value=0,
-        name="18:UH:TEMP.SEVR",
-        dtype=ChannelType.ENUM,
-        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
-    )
-    downstreamHOM = pvproperty(
-        value=0,
-        name="20:DH:TEMP.SEVR",
-        dtype=ChannelType.ENUM,
-        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
-    )
+    upstreamHOM = SeverityProp(value=0, name="18:UH:TEMP")
+    downstreamHOM = SeverityProp(value=0, name="20:DH:TEMP")
 
 
 class RACKPVGroup(PVGroup):
@@ -271,12 +256,7 @@ class RACKPVGroup(PVGroup):
     fscan_stop = pvproperty(value=0, name="FSCAN:FREQ_STOP")
     fscan_thresh = pvproperty(value=0, name="FSCAN:RMS_THRESH")
     fscan_overlap = pvproperty(value=0, name="FSCAN:MODE_OVERLAP")
-    prl = pvproperty(
-        value=0,
-        name="PRLSUM.SEVR",
-        dtype=ChannelType.ENUM,
-        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
-    )
+    prl = SeverityProp(value=0, name="PRLSUM")
     pjt: PvpropertyDouble = pvproperty(
         value=0, name="PRLJITSUM", dtype=ChannelType.DOUBLE
     )
@@ -563,11 +543,9 @@ class CavFaultPVGroup(PVGroup):
         dtype=ChannelType.ENUM,
         enum_strings=("Ok", "Fault"),
     )
-    cavity_controller: PvpropertyEnum = pvproperty(
+    cavity_controller: PvpropertyEnum = SeverityProp(
         value=0,
-        name="CTRL_SUM.SEVR",
-        dtype=ChannelType.ENUM,
-        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+        name="CTRL_SUM",
     )
 
     amp_feedback_sum: PvpropertyEnum = pvproperty(
@@ -609,17 +587,13 @@ class CavFaultPVGroup(PVGroup):
         dtype=ChannelType.ENUM,
         enum_strings=("Not Bypassed", "Bypassed"),
     )
-    amplitude_tol: PvpropertyEnum = pvproperty(
-        name="AACTMEAN.SEVR",
+    amplitude_tol: PvpropertyEnum = SeverityProp(
+        name="AACTMEAN",
         value=0,
-        dtype=ChannelType.ENUM,
-        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
     )
-    phase_tol: PvpropertyEnum = pvproperty(
-        name="PACTMEAN.SEVR",
+    phase_tol: PvpropertyEnum = SeverityProp(
+        name="PACTMEAN",
         value=0,
-        dtype=ChannelType.ENUM,
-        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
     )
     local_oscillator: PvpropertyEnum = pvproperty(
         name="LO_LTCH", value=0, dtype=ChannelType.ENUM, enum_strings=("Ok", "Fault")
@@ -927,6 +901,13 @@ class SSAPVGroup(PVGroup):
         ),
     )
 
+    status_480: PvpropertyEnum = pvproperty(
+        name="480VACStat",
+        value=0,
+        dtype=ChannelType.ENUM,
+        enum_strings=("Enabled", "Disabled"),
+    )
+
     cal_start: PvpropertyEnum = pvproperty(
         value=0, name="CALSTRT", dtype=ChannelType.ENUM, enum_strings=("Start", "Start")
     )
@@ -961,11 +942,9 @@ class SSAPVGroup(PVGroup):
     nirp: PvpropertyEnum = pvproperty(
         value=1, name="NRP_PRMT", dtype=ChannelType.ENUM, enum_strings=("FAULT", "OK")
     )
-    fault_sum: PvpropertyEnum = pvproperty(
+    fault_sum: PvpropertyEnum = SeverityProp(
         value=0,
-        name="FaultSummary.SEVR",
-        dtype=ChannelType.ENUM,
-        enum_strings=("NO_ALARM", "MINOR", "MAJOR", "INVALID"),
+        name="FaultSummary",
     )
 
     def __init__(self, prefix, cavityGroup: CavityPVGroup):
