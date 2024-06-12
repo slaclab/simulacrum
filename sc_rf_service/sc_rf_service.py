@@ -25,7 +25,6 @@ from lcls_tools.superconducting.sc_linac_utils import (
     LINAC_TUPLES,
     PIEZO_HZ_PER_VOLT,
 )
-
 from simulacrum import Service
 
 
@@ -200,9 +199,22 @@ class AutoSetupCavityPVGroup(AutoSetupPVGroup):
 class HeaterPVGroup(PVGroup):
     setpoint = pvproperty(name="MANPOS_RQST", value=24.0)
     readback = pvproperty(name="ORBV", value=24.0)
+    mode = pvproperty(name="MODE", value=1)
     mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="SEQUENCER")
     manual: PvpropertyBoolEnum = pvproperty(name="MANUAL")
     sequencer: PvpropertyBoolEnum = pvproperty(name="SEQUENCER")
+
+    @manual.putter
+    async def manual(self, instance, value):
+        if value == 1:
+            await self.mode.write(0)
+            await self.mode_string.write("MANUAL")
+
+    @sequencer.putter
+    async def sequencer(self, instance, value):
+        if value == 1:
+            await self.mode.write(1)
+            await self.mode_string.write("SEQUENCER")
 
 
 class JTPVGroup(PVGroup):
@@ -213,6 +225,10 @@ class JTPVGroup(PVGroup):
     mode = pvproperty(name="MODE", value=0)
     man_pos = pvproperty(name="MANPOS_RQST", value=40.0)
     mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="AUTO")
+
+    @man_pos.putter
+    async def man_pos(self, instance, value):
+        await self.readback.write(value)
 
 
 class LiquidLevelPVGroup(PVGroup):
@@ -1067,7 +1083,6 @@ class CavityService(Service):
 
         rackA = range(1, 5)
         self.add_pvs(PPSPVGroup(prefix="PPS:SYSW:1:"))
-
         self.add_pvs(AutoSetupGlobalPVGroup(prefix="ACCL:SYS0:SC:"))
 
         for linac_idx, (linac_name, cm_list) in enumerate(LINAC_TUPLES):
