@@ -89,14 +89,14 @@ class AutoSetupCMPVGroup(AutoSetupPVGroup):
     async def trigger_setup_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/srf_cm_setup_launcher.py",
+            "/Users/soham/srf_auto_setup/srf_cm_setup_launcher.py",
             f"-cm={self.cm_name}",
         )
 
     async def trigger_shutdown_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/srf_cm_setup_launcher.py",
+            "/Users/soham/srf_auto_setup/srf_cm_setup_launcher.py",
             f"-cm={self.cm_name}",
             "-off",
         )
@@ -110,14 +110,14 @@ class AutoSetupLinacPVGroup(AutoSetupPVGroup):
     async def trigger_setup_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/srf_linac_setup_launcher.py",
+            "/Users/soham/srf_auto_setup/srf_linac_setup_launcher.py",
             f"-cm={self.linac_idx}",
         )
 
     async def trigger_shutdown_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/srf_linac_setup_launcher.py",
+            "/Users/soham/srf_auto_setup/srf_linac_setup_launcher.py",
             f"-cm={self.linac_idx}",
             "-off",
         )
@@ -130,13 +130,13 @@ class AutoSetupGlobalPVGroup(AutoSetupPVGroup):
     async def trigger_setup_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/srf_global_setup_launcher.py",
+            "/Users/soham/srf_auto_setup/srf_global_setup_launcher.py",
         )
 
     async def trigger_shutdown_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/srf_global_setup_launcher.py",
+            "/Users/soham/srf_auto_setup/srf_global_setup_launcher.py",
             "-off",
         )
 
@@ -182,7 +182,7 @@ class AutoSetupCavityPVGroup(AutoSetupPVGroup):
     async def trigger_setup_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/srf_cavity_setup_launcher.py",
+            "/Users/soham/srf_auto_setup/srf_cavity_setup_launcher.py",
             f"-cm={self.cm_name}",
             f"-cav={self.cav_num}",
         )
@@ -190,7 +190,7 @@ class AutoSetupCavityPVGroup(AutoSetupPVGroup):
     async def trigger_shutdown_script(self):
         process = await create_subprocess_exec(
             "python",
-            "/Users/zacarias/srf/auto_setup/srf_cavity_setup_launcher.py",
+            "/Users/soham/srf_auto_setup/srf_cavity_setup_launcher.py",
             f"-cm={self.cm_name}",
             f"-cav={self.cav_num}",
             "-off",
@@ -204,6 +204,9 @@ class HeaterPVGroup(PVGroup):
     manual: PvpropertyBoolEnum = pvproperty(name="MANUAL")
     sequencer: PvpropertyBoolEnum = pvproperty(name="SEQUENCER")
 
+    @readback.putter
+    async def readback(self, instance, value):
+        print('HEATER READBACK PUTTER CALLED')
 
 class JTPVGroup(PVGroup):
     readback = pvproperty(name="ORBV", value=30.0)
@@ -215,10 +218,33 @@ class JTPVGroup(PVGroup):
     mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="AUTO")
 
 
+    def __init__(self, prefix, liquid_group):
+        super().__init__(prefix)
+        self.liquid_group: LiquidLevelPVGroup = liquid_group
+        self.prev_readback: int = 0
+    
+    @readback.putter
+    async def readback(self, instance, value):
+            # then we decrease it 
+            # actual process is to decrease readback in steps 
+
+        if self.prev_readback < value:
+            self.prev_readback = self.readback.value
+            await self.mode_string.write(self.manual.name)
+
+
+            while self.liquid_group.downstream.value < 93.0:
+                curr = self.liquid_group.downstream.value
+                await self.liquid_group.downstream.write(curr + 0.015)
+                await sleep(1)
+            
+            await self.mode_string.write(self.auto.name)
+    
+
 class LiquidLevelPVGroup(PVGroup):
     upstream = pvproperty(name="2601:US:LVL", value=75.0)
     downstream = pvproperty(name="2301:DS:LVL", value=93.0)
-
+            
 
 class CryomodulePVGroup(PVGroup):
     nrp = pvproperty(
@@ -1133,8 +1159,10 @@ class CavityService(Service):
                     )
                     self.add_pvs(CavFaultPVGroup(prefix=cav_prefix))
 
-                    self.add_pvs(JTPVGroup(prefix=jt_prefix))
-                    self.add_pvs(LiquidLevelPVGroup(prefix=liquid_level_prefix))
+                    liquid_level_pv = LiquidLevelPVGroup(prefix=liquid_level_prefix)
+                    self.add_pvs(liquid_level_pv)
+                    self.add_pvs(JTPVGroup(prefix=jt_prefix, liquid_group=liquid_level_pv))
+
 
                     # Rack PVs are stupidly inconsistent
                     if cav_num in rackA:
