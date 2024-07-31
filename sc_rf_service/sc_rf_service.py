@@ -1,6 +1,6 @@
 from asyncio import create_subprocess_exec, get_event_loop, sleep
 from datetime import datetime
-from random import random, randrange, uniform
+from random import random, randrange, uniform, randint
 from typing import List
 
 from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
@@ -19,11 +19,13 @@ from caproto.server import (
     pvproperty,
     run,
 )
+
 from lcls_tools.superconducting.sc_linac_utils import (
     ESTIMATED_MICROSTEPS_PER_HZ,
     L1BHL,
     LINAC_TUPLES,
     PIEZO_HZ_PER_VOLT,
+    LINAC_CM_DICT,
 )
 from simulacrum import Service
 
@@ -761,7 +763,7 @@ class CavityPVGroup(PVGroup):
         enum_strings=("On resonance", "Cold landing", "Parked", "Other"),
     )
     df_cold: PvpropertyFloat = pvproperty(
-        value=0.0, name="DF_COLD", dtype=ChannelType.FLOAT
+        value=randint(-10000, 200000), name="DF_COLD", dtype=ChannelType.FLOAT
     )
     step_temp: PvpropertyFloat = pvproperty(
         value=35.0, name="STEPTEMP", dtype=ChannelType.FLOAT
@@ -844,6 +846,12 @@ class CavityPVGroup(PVGroup):
         value=0.0, name="SEL_POFF", dtype=ChannelType.FLOAT
     )
 
+    q0: PvpropertyFloat = pvproperty(
+        value=randrange(int(2.5e10), int(3.5e10), step=int(0.1e10)),
+        name="Q0",
+        dtype=ChannelType.FLOAT,
+    )
+
     def __init__(self, prefix, isHL: bool):
         super().__init__(prefix)
 
@@ -904,6 +912,9 @@ class CavityPVGroup(PVGroup):
 
 
 class SSAPVGroup(PVGroup):
+    vacstat = pvproperty(
+        value=0, name="480VACStat", dtype=ChannelType.ENUM, enum_strings=("On", "Off")
+    )
     on: PvpropertyEnum = pvproperty(
         value=1, name="PowerOn", dtype=ChannelType.ENUM, enum_strings=("False", "True")
     )
@@ -1094,6 +1105,7 @@ class MAGNETPVGroup(PVGroup):
 class CavityService(Service):
     def __init__(self):
         super().__init__()
+        self["PHYS:SYS0:1:SC_SEL_PHAS_OPT_HEARTBEAT"] = ChannelInteger(value=0)
         self["PHYS:SYS0:1:SC_CAV_QNCH_RESET_HEARTBEAT"] = ChannelInteger(value=0)
         self["PHYS:SYS0:1:SC_CAV_FAULT_HEARTBEAT"] = ChannelInteger(value=0)
 
@@ -1108,7 +1120,9 @@ class CavityService(Service):
 
         for linac_idx, (linac_name, cm_list) in enumerate(LINAC_TUPLES):
             linac_prefix = f"ACCL:{linac_name}:1:"
-            self[f"{linac_prefix}AACTMEANSUM"] = ChannelFloat(value=0.0)
+            self[f"{linac_prefix}AACTMEANSUM"] = ChannelFloat(
+                value=len(LINAC_CM_DICT[linac_idx]) * 8 * 16.6
+            )
             self[f"{linac_prefix}ADES_MAX"] = ChannelFloat(value=2800.0)
             if linac_name == "L1B":
                 cm_list += L1BHL
