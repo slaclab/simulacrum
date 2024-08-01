@@ -1,6 +1,6 @@
 from asyncio import create_subprocess_exec, get_event_loop, sleep
 from datetime import datetime
-from random import random, randrange, uniform
+from random import random, randrange, uniform, randint
 from typing import List
 
 from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
@@ -19,15 +19,16 @@ from caproto.server import (
     pvproperty,
     run,
 )
+from lcls_tools.superconducting.sc_cavity import Cavity
+from lcls_tools.superconducting.sc_linac import MACHINE
 from lcls_tools.superconducting.sc_linac_utils import (
     ESTIMATED_MICROSTEPS_PER_HZ,
     L1BHL,
     LINAC_TUPLES,
-    PIEZO_HZ_PER_VOLT,
+    PIEZO_HZ_PER_VOLT, LINAC_CM_DICT,
 )
 
 from simulacrum import Service
-
 
 class SeverityProp(pvproperty):
     def __init__(self, name, value, **cls_kwargs):
@@ -196,17 +197,10 @@ class AutoSetupCavityPVGroup(AutoSetupPVGroup):
             "-off",
         )
 
+class LiquidLevelPVGroup(PVGroup):
+    upstream = pvproperty(name="2601:US:LVL", value=75.0)
+    downstream = pvproperty(name="2301:DS:LVL", value=93.0)
 
-class HeaterPVGroup(PVGroup):
-    setpoint = pvproperty(name="MANPOS_RQST", value=24.0)
-    readback = pvproperty(name="ORBV", value=24.0)
-    mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="SEQUENCER")
-    manual: PvpropertyBoolEnum = pvproperty(name="MANUAL")
-    sequencer: PvpropertyBoolEnum = pvproperty(name="SEQUENCER")
-
-    @readback.putter
-    async def readback(self, instance, value):
-        print('HEATER READBACK PUTTER CALLED')
 
 class JTPVGroup(PVGroup):
     readback = pvproperty(name="ORBV", value=30.0)
@@ -217,34 +211,68 @@ class JTPVGroup(PVGroup):
     man_pos = pvproperty(name="MANPOS_RQST", value=40.0)
     mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="AUTO")
 
-
-    def __init__(self, prefix, liquid_group):
+    def __init__(self, prefix, ll_group: LiquidLevelPVGroup, cm_group):
         super().__init__(prefix)
-        self.liquid_group: LiquidLevelPVGroup = liquid_group
-        self.prev_readback: int = 0
-    
-    @readback.putter
-    async def readback(self, instance, value):
-            # then we decrease it 
-            # actual process is to decrease readback in steps 
 
-        if self.prev_readback < value:
-            self.prev_readback = self.readback.value
-            await self.mode_string.write(self.manual.name)
+        self.ll_group = ll_group
+        self.cm_group = cm_group
+        self.stable_value = self.cm_group.total_heat(on_start=True)
 
-
-            while self.liquid_group.downstream.value < 93.0:
-                curr = self.liquid_group.downstream.value
-                await self.liquid_group.downstream.write(curr + 0.015)
+    @man_pos.putter
+    async def man_pos(self, instance, value):
+        await self.readback.write(value)
+        self.stable_value = self.cm_group.total_heat()
+        if value * 1.1 > self.stable_value:
+            while self.man_pos.value * 1.1 > value:
+                curr = self.ll_group.downstream.value
+                await self.ll_group.downstream.write(curr - 0.01)
                 await sleep(1)
-            
-            await self.mode_string.write(self.auto.name)
-    
+        elif value * 0.9 < self.stable_value:
+            while self.man_pos.value * 0.9 < value:
+                curr = self.ll_group.downstream.value
+                await self.ll_group.downstream.write(curr + 0.01)
+                await sleep(1)
 
-class LiquidLevelPVGroup(PVGroup):
-    upstream = pvproperty(name="2601:US:LVL", value=75.0)
-    downstream = pvproperty(name="2301:DS:LVL", value=93.0)
-            
+
+class HeaterPVGroup(PVGroup):
+    setpoint = pvproperty(name="MANPOS_RQST", value=24.0)
+    readback = pvproperty(name="ORBV", value=24.0)
+    mode = pvproperty(name="Mode", value=1)
+    mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="SEQUENCER")
+    manual: PvpropertyBoolEnum = pvproperty(name="MANUAL")
+    sequencer: PvpropertyBoolEnum = pvproperty(name="SEQUENCER")
+
+    def __init__(self, prefix, jt_group: JTPVGroup, cm_group):
+        super().__init__(prefix)
+        self.jt_group = jt_group
+        self.cm_group = cm_group
+
+    @manual.putter
+    async def manual(self, instance, value):
+        if value == 1:
+            await self.mode.write(0)
+            await self.mode_string.write("MANUAL")
+
+    @sequencer.putter
+    async def sequencer(self, instance, value):
+        if value == 1:
+            await self.mode.write(1)
+            await self.mode_string.write("SEQUENCER")
+
+    @setpoint.putter
+    async def setpoint(self, instance, value):
+        self.cm_group.heater_value = value
+        self.jt_group.stable_value = self.cm_group.total_heat(heater_value=value)
+        if self.jt_group.man_pos.value * 1.1 > self.jt_group.stable_value:
+             while self.jt_group.man_pos.value * 1.1 > self.jt_group.stable_value:
+                curr = self.jt_group.ll_group.downstream.value
+                await self.jt_group.ll_group.downstream.write(curr - 0.01)
+                await sleep(1)
+        elif self.jt_group.man_pos.value * 0.9 < self.jt_group.stable_value:
+            while self.jt_group.man_pos.value * 0.9 < self.jt_group.stable_value:
+                curr = self.jt_group.ll_group.downstream.value
+                await self.jt_group.ll_group.downstream.write(curr + 0.01)
+                await sleep(1)
 
 class CryomodulePVGroup(PVGroup):
     nrp = pvproperty(
@@ -254,6 +282,25 @@ class CryomodulePVGroup(PVGroup):
     # TODO - find this and see what type pv it is on bcs/ops_lcls2_bcs_main.edl
     bcs = pvproperty(value=0, name="BCSDRVSUM", dtype=ChannelType.DOUBLE)
 
+    def __init__(self, prefix, cavities):
+
+        super().__init__(prefix)
+        self.cavities = cavities
+        self.heater_value = 24.0
+
+    def calc_rf_heat_load(self):
+        rf_heat = 0
+        for _, cavity in self.cavities.items():
+            rf_heat += (cavity.aact.value * 1e6) ** 2 / (1012 * cavity.q0.value)
+        return rf_heat
+
+    def total_heat(self, on_start=False, heater_value=None):
+        if heater_value:
+            self.heater_value = heater_value
+        total_heat = self.calc_rf_heat_load() + self.heater_value
+        if not on_start:
+            print(f'New JT stable position = Total Heat = {total_heat}')
+        return total_heat
 
 class CryoPVGroup(PVGroup):
     uhl = SeverityProp(name="LVL", value=0)
@@ -745,7 +792,7 @@ class CavityPVGroup(PVGroup):
         enum_strings=("On resonance", "Cold landing", "Parked", "Other"),
     )
     df_cold: PvpropertyFloat = pvproperty(
-        value=0.0, name="DF_COLD", dtype=ChannelType.FLOAT
+        value=randint(-10000, 200000), name="DF_COLD", dtype=ChannelType.FLOAT
     )
     step_temp: PvpropertyFloat = pvproperty(
         value=35.0, name="STEPTEMP", dtype=ChannelType.FLOAT
@@ -826,6 +873,12 @@ class CavityPVGroup(PVGroup):
     )
     sel_poff: PvpropertyFloat = pvproperty(
         value=0.0, name="SEL_POFF", dtype=ChannelType.FLOAT
+    )
+
+    q0: PvpropertyFloat = pvproperty(
+        value=randrange(int(2.5e10), int(3.5e10), step=int(0.1e10)),
+        name="Q0",
+        dtype=ChannelType.FLOAT
     )
 
     def __init__(self, prefix, isHL: bool):
@@ -1083,6 +1136,7 @@ class MAGNETPVGroup(PVGroup):
 class CavityService(Service):
     def __init__(self):
         super().__init__()
+
         self["PHYS:SYS0:1:SC_CAV_QNCH_RESET_HEARTBEAT"] = ChannelInteger(value=0)
         self["PHYS:SYS0:1:SC_CAV_FAULT_HEARTBEAT"] = ChannelInteger(value=0)
 
@@ -1093,12 +1147,11 @@ class CavityService(Service):
 
         rackA = range(1, 5)
         self.add_pvs(PPSPVGroup(prefix="PPS:SYSW:1:"))
-
         self.add_pvs(AutoSetupGlobalPVGroup(prefix="ACCL:SYS0:SC:"))
 
         for linac_idx, (linac_name, cm_list) in enumerate(LINAC_TUPLES):
             linac_prefix = f"ACCL:{linac_name}:1:"
-            self[f"{linac_prefix}AACTMEANSUM"] = ChannelFloat(value=0.0)
+            self[f"{linac_prefix}AACTMEANSUM"] = ChannelFloat(value=len(LINAC_CM_DICT[linac_idx]) * 8 * 16.60)
             self[f"{linac_prefix}ADES_MAX"] = ChannelFloat(value=2800.0)
             if linac_name == "L1B":
                 cm_list += L1BHL
@@ -1110,7 +1163,6 @@ class CavityService(Service):
             for cm_name in cm_list:
                 is_hl = cm_name in L1BHL
                 heater_prefix = f"CPIC:CM{cm_name}:0000:EHCV:"
-                self.add_pvs(HeaterPVGroup(prefix=heater_prefix))
 
                 self[f"CRYO:CM{cm_name}:0:CAS_ACCESS"] = ChannelEnum(
                     enum_strings=("Close", "Open"), value=1
@@ -1132,37 +1184,35 @@ class CavityService(Service):
                     AutoSetupCMPVGroup(prefix=cm_prefix + "00:", cm_name=cm_name)
                 )
 
+                jt_prefix = f"CLIC:CM{cm_name}:3001:PVJT:"
+                liquid_level_prefix = f"CLL:CM{cm_name}:"
+                cavities = {}
+
                 for cav_num in range(1, 9):
                     cav_prefix = cm_prefix + f"{cav_num}0:"
 
-                    jt_prefix = f"CLIC:CM{cm_name}:3001:PVJT:"
-                    liquid_level_prefix = f"CLL:CM{cm_name}:"
-
                     HOM_prefix = f"CTE:CM{cm_name}:1{cav_num}"
 
-                    cavityGroup = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
-                    self.add_pvs(cavityGroup)
+                    cavity_group = CavityPVGroup(prefix=cav_prefix, isHL=is_hl)
+                    self.add_pvs(cavity_group)
                     self.add_pvs(
-                        SSAPVGroup(prefix=cav_prefix + "SSA:", cavityGroup=cavityGroup)
+                        SSAPVGroup(prefix=cav_prefix + "SSA:", cavityGroup=cavity_group)
                     )
+                    cavities[cav_num] = cavity_group
 
                     piezo_group = PiezoPVGroup(
-                        prefix=cav_prefix + "PZT:", cavity_group=cavityGroup
+                        prefix=cav_prefix + "PZT:", cavity_group=cavity_group
                     )
+
                     self.add_pvs(piezo_group)
                     self.add_pvs(
                         StepperPVGroup(
                             prefix=cav_prefix + "STEP:",
-                            cavity_group=cavityGroup,
+                            cavity_group=cavity_group,
                             piezo_group=piezo_group,
                         )
                     )
                     self.add_pvs(CavFaultPVGroup(prefix=cav_prefix))
-
-                    liquid_level_pv = LiquidLevelPVGroup(prefix=liquid_level_prefix)
-                    self.add_pvs(liquid_level_pv)
-                    self.add_pvs(JTPVGroup(prefix=jt_prefix, liquid_group=liquid_level_pv))
-
 
                     # Rack PVs are stupidly inconsistent
                     if cav_num in rackA:
@@ -1183,7 +1233,16 @@ class CavityService(Service):
                 self.add_pvs(CryoPVGroup(prefix=cryo_prefix))
                 self.add_pvs(BeamlineVacuumPVGroup(prefix=cm_prefix + "00:"))
                 self.add_pvs(CouplerVacuumPVGroup(prefix=cm_prefix + "10:"))
-                self.add_pvs(CryomodulePVGroup(prefix=cm_prefix + "00:"))
+
+                liquid_level_pv = LiquidLevelPVGroup(prefix=liquid_level_prefix)
+                self.add_pvs(liquid_level_pv)
+                cryomodule_group = CryomodulePVGroup(prefix=cm_prefix + "00:", cavities=cavities)
+                self.add_pvs(cryomodule_group)
+                jtpv_group = JTPVGroup(prefix=jt_prefix, ll_group=liquid_level_pv, cm_group=cryomodule_group)
+                self.add_pvs(jtpv_group)
+                self.add_pvs(HeaterPVGroup(prefix=heater_prefix, jt_group=jtpv_group, cm_group=cryomodule_group))
+
+
 
 
 def main():
