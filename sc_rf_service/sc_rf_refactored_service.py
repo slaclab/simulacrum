@@ -55,13 +55,7 @@ class SimulacrumCavity(Cavity):
     async def aact_amp_change(self, value: float):
         cm = self.cryomodule
         cm.jt_stable_pos = cm.total_heat_load(amp_change={self.number: value})
-        jt_man_pos = cm.channels[cm.jt_prefix + "MANPOS_RQST"].value
-        if jt_man_pos * 0.9 > cm.jt_stable_pos:
-            while jt_man_pos * 0.9 > cm.jt_stable_pos:
-                await cm.adjust_liquid_level()
-        elif jt_man_pos * 1.1 < cm.jt_stable_pos:
-            while jt_man_pos * 1.1 < cm.jt_stable_pos:
-                await cm.adjust_liquid_level()
+        await cm.adjust_liquid_level()
 
 
 class SimulacrumCM(Cryomodule):
@@ -80,13 +74,7 @@ class SimulacrumCM(Cryomodule):
         self.channels[self.heater_readback_pv] = ChannelFloat(value=24.0)
         self.channels[self.heater_mode] = ChannelString(value="MANUAL")
 
-        self._jt_stable_pos: Optional[float] = None
-
-    @property
-    def jt_stable_pos(self):
-        if not self._jt_stable_pos:
-            self._jt_stable_pos = self.total_heat_load()
-        return self.jt_stable_pos
+        self.jt_stable_pos: Optional[float] = self.total_heat_load()
 
     def total_heat_load(self, heater_value: Optional[float] = None, amp_change: Optional[Dict[int, float]] = None):
         rf_heat = 0
@@ -105,37 +93,30 @@ class SimulacrumCM(Cryomodule):
         GAIN_AMOUNT = LOSS_AMOUNT
         SLEEP_AMOUNT = 1
 
-        jt_setpoint = self.channels[self.jt_prefix + "MANPOS_RQST"].value
-        curr = self.channels[self.ds_level_pv].value
-        if 70 <= curr <= 100:
-            new_amount = curr
-            if jt_setpoint * 0.9 > self.jt_stable_pos:
-                new_amount -= LOSS_AMOUNT
-            elif jt_setpoint * 1.1 < self.jt_stable_pos:
-                new_amount += GAIN_AMOUNT
-            await self.channels[self.ds_level_pv].write(new_amount)
-            await sleep(SLEEP_AMOUNT)
+        jt_setpoint = self.channels[self.jt_valve_readback_pv].value
+        print(self.jt_stable_pos)
+        if jt_setpoint * 0.9 > self.jt_stable_pos:
+            while (self.channels[self.jt_valve_readback_pv].value * 0.9 > self.jt_stable_pos
+                   and 70 <= self.channels[self.ds_level_pv].value <= 100):
+                curr = self.channels[self.ds_level_pv].value
+                await self.channels[self.ds_level_pv].write(curr - LOSS_AMOUNT)
+                await sleep(SLEEP_AMOUNT)
+        elif jt_setpoint * 1.1 < self.jt_stable_pos:
+            while (self.channels[self.jt_valve_readback_pv].value * 1.1 < self.jt_stable_pos
+                   and 70 <= self.channels[self.ds_level_pv].value <= 100):
+                curr = self.channels[self.ds_level_pv].value
+                await self.channels[self.ds_level_pv].write(curr + GAIN_AMOUNT)
+                await sleep(SLEEP_AMOUNT)
 
-    async def jt_valve_update(self, value: float):
+    async def jt_valve_update(self, value):
         await self.channels[self.jt_valve_readback_pv].write(value)
-        if value * 0.9 > self.jt_stable_pos:
-            while self.channels[self.jt_valve_readback_pv].value * 0.9 > self.jt_stable_pos:
-                await self.adjust_liquid_level()
-        elif value * 1.1 < self.jt_stable_pos:
-            while self.channels[self.jt_valve_readback_pv].value * 1.1 < self.jt_stable_pos:
-                await self.adjust_liquid_level()
+        await self.adjust_liquid_level()
 
     async def heater_setpoint_update(self, value: float):
         self.jt_stable_pos = self.total_heat_load(heater_value=value)
         if self.channels[self.heater_mode].value == "MANUAL":
             await self.channels[self.heater_readback_pv].write(value)
-            jt_man_pos = self.channels[self.jt_prefix + "MANPOS_RQST"].value
-            if jt_man_pos * 0.9 > self.jt_stable_pos:
-                while self.channels[self.jt_prefix + "MANPOS_RQST"].value * 0.9 > self.jt_stable_pos:
-                    await self.adjust_liquid_level()
-            elif jt_man_pos * 1.1 < self.jt_stable_pos:
-                while self.channels[self.jt_prefix + "MANPOS_RQST"].value * 1.1 < self.jt_stable_pos:
-                    await self.adjust_liquid_level()
+            await self.adjust_liquid_level()
 
 
 class CavityService(Service):
