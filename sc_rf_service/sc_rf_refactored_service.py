@@ -1,3 +1,4 @@
+import time
 from asyncio import get_event_loop, sleep
 from datetime import datetime
 from random import randrange
@@ -8,6 +9,7 @@ from caproto.server import ioc_arg_parser, run
 from lcls_tools.superconducting.sc_cavity import Cavity
 from lcls_tools.superconducting.sc_cryomodule import Cryomodule
 from lcls_tools.superconducting.sc_linac import Linac, Machine
+from pid import PID
 from simulacrum import Service
 
 
@@ -68,13 +70,22 @@ class SimulacrumCM(Cryomodule):
         self.channels[self.ds_level_pv] = ChannelFloat(value=93.0)
         self.channels[self.us_level_pv] = ChannelFloat(value=75.0)
         self.channels[self.jt_valve_readback_pv] = ChannelFloat(value=30.0)
-        self.channels[self.jt_prefix + "MANPOS_RQST"] = PropertyFloatChannel(value=40.0, putter=self.jt_valve_update)
+        self.channels[self.jt_prefix + "MANPOS_RQST"] = ChannelFloat(value=70.0)
+        # self.channels[self.jt_prefix + "MANPOS_RQST"] = PropertyFloatChannel(value=70.0, putter=self.jt_valve_update)
         self.channels[self.jt_valve_readback_pv] = ChannelFloat(value=40.0)
+        self.channels[self.jt_prefix + "AUTO"] = PropertyFloatChannel(value=0, putter=self.jt_automate)
         self.channels[self.heater_setpoint] = PropertyFloatChannel(value=24.0, putter=self.heater_setpoint_update)
         self.channels[self.heater_readback_pv] = ChannelFloat(value=24.0)
         self.channels[self.heater_mode] = ChannelString(value="MANUAL")
 
         self.jt_stable_pos: Optional[float] = self.total_heat_load()
+        self._pid: Optional[PID] = None
+
+    @property
+    def pid(self):
+        if not self._pid:
+            self._pid = PID(57, Kp=0.1, Ki=0)
+        return self._pid
 
     def total_heat_load(self, heater_value: Optional[float] = None, amp_change: Optional[Dict[int, float]] = None):
         rf_heat = 0
@@ -85,16 +96,16 @@ class SimulacrumCM(Cryomodule):
                 aact = amp_change[cavity.number]
             rf_heat += (aact * 1e6) ** 2 / (1012 * channels[cavity.pv_addr("Q0")].value)
         heater = self.channels[self.heater_setpoint].value if not heater_value else heater_value
+        print(f"New JT stable position: {rf_heat + heater}")
         return rf_heat + heater
 
     async def adjust_liquid_level(self):
         # TODO: calculate sleep + liquid gained/lost function
-        LOSS_AMOUNT = 0.01
+        LOSS_AMOUNT = 0.3
         GAIN_AMOUNT = LOSS_AMOUNT
         SLEEP_AMOUNT = 1
 
         jt_setpoint = self.channels[self.jt_valve_readback_pv].value
-        print(self.jt_stable_pos)
         if jt_setpoint * 0.9 > self.jt_stable_pos:
             while (self.channels[self.jt_valve_readback_pv].value * 0.9 > self.jt_stable_pos
                    and 70 <= self.channels[self.ds_level_pv].value <= 100):
@@ -109,14 +120,25 @@ class SimulacrumCM(Cryomodule):
                 await sleep(SLEEP_AMOUNT)
 
     async def jt_valve_update(self, value):
-        await self.channels[self.jt_valve_readback_pv].write(value)
-        await self.adjust_liquid_level()
+        if value * 0.9 <= self.jt_stable_pos <= value * 1.1:
+            await self.channels[self.jt_valve_readback_pv].write(value)
+        else:
+            await self.channels[self.jt_valve_readback_pv].write(self.jt_stable_pos)  # to stop (outdated) loop, as
+            # LOSS/GAIN amount is a function of current position
+            await self.channels[self.jt_valve_readback_pv].write(value)
+            await self.adjust_liquid_level()
 
     async def heater_setpoint_update(self, value: float):
         self.jt_stable_pos = self.total_heat_load(heater_value=value)
         if self.channels[self.heater_mode].value == "MANUAL":
             await self.channels[self.heater_readback_pv].write(value)
             await self.adjust_liquid_level()
+
+    async def jt_automate(self, value):
+        while True:
+            # print(self.channels[self.jt_prefix + "MANPOS_RQST"].value)
+            await self.channels[self.jt_prefix + "MANPOS_RQST"].write(self.pid(self.channels[self.jt_prefix + "MANPOS_RQST"].value))
+            await sleep(1)
 
 
 class CavityService(Service):
