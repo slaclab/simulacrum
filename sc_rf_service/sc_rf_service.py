@@ -1,6 +1,6 @@
 from asyncio import create_subprocess_exec, get_event_loop, sleep
 from datetime import datetime
-from random import random, randrange, uniform
+from random import random, randrange, uniform, randint
 from typing import List
 
 from caproto import ChannelEnum, ChannelFloat, ChannelInteger, ChannelType
@@ -19,13 +19,14 @@ from caproto.server import (
     pvproperty,
     run,
 )
+
 from lcls_tools.superconducting.sc_linac_utils import (
     ESTIMATED_MICROSTEPS_PER_HZ,
     L1BHL,
     LINAC_TUPLES,
     PIEZO_HZ_PER_VOLT,
+    LINAC_CM_DICT,
 )
-
 from simulacrum import Service
 
 
@@ -200,9 +201,22 @@ class AutoSetupCavityPVGroup(AutoSetupPVGroup):
 class HeaterPVGroup(PVGroup):
     setpoint = pvproperty(name="MANPOS_RQST", value=24.0)
     readback = pvproperty(name="ORBV", value=24.0)
+    mode = pvproperty(name="MODE", value=1)
     mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="SEQUENCER")
     manual: PvpropertyBoolEnum = pvproperty(name="MANUAL")
     sequencer: PvpropertyBoolEnum = pvproperty(name="SEQUENCER")
+
+    @manual.putter
+    async def manual(self, instance, value):
+        if value == 1:
+            await self.mode.write(0)
+            await self.mode_string.write("MANUAL")
+
+    @sequencer.putter
+    async def sequencer(self, instance, value):
+        if value == 1:
+            await self.mode.write(1)
+            await self.mode_string.write("SEQUENCER")
 
 
 class JTPVGroup(PVGroup):
@@ -213,6 +227,10 @@ class JTPVGroup(PVGroup):
     mode = pvproperty(name="MODE", value=0)
     man_pos = pvproperty(name="MANPOS_RQST", value=40.0)
     mode_string: PvpropertyString = pvproperty(name="MODE_STRING", value="AUTO")
+
+    @man_pos.putter
+    async def man_pos(self, instance, value):
+        await self.readback.write(value)
 
 
 class LiquidLevelPVGroup(PVGroup):
@@ -719,7 +737,7 @@ class CavityPVGroup(PVGroup):
         enum_strings=("On resonance", "Cold landing", "Parked", "Other"),
     )
     df_cold: PvpropertyFloat = pvproperty(
-        value=0.0, name="DF_COLD", dtype=ChannelType.FLOAT
+        value=randint(-10000, 200000), name="DF_COLD", dtype=ChannelType.FLOAT
     )
     step_temp: PvpropertyFloat = pvproperty(
         value=35.0, name="STEPTEMP", dtype=ChannelType.FLOAT
@@ -802,6 +820,12 @@ class CavityPVGroup(PVGroup):
         value=0.0, name="SEL_POFF", dtype=ChannelType.FLOAT
     )
 
+    q0: PvpropertyFloat = pvproperty(
+        value=randrange(int(2.5e10), int(3.5e10), step=int(0.1e10)),
+        name="Q0",
+        dtype=ChannelType.FLOAT,
+    )
+
     def __init__(self, prefix, isHL: bool):
         super().__init__(prefix)
 
@@ -862,6 +886,7 @@ class CavityPVGroup(PVGroup):
 
 
 class SSAPVGroup(PVGroup):
+
     on: PvpropertyEnum = pvproperty(
         value=1, name="PowerOn", dtype=ChannelType.ENUM, enum_strings=("False", "True")
     )
@@ -1057,6 +1082,7 @@ class MAGNETPVGroup(PVGroup):
 class CavityService(Service):
     def __init__(self):
         super().__init__()
+        self["PHYS:SYS0:1:SC_SEL_PHAS_OPT_HEARTBEAT"] = ChannelInteger(value=0)
         self["PHYS:SYS0:1:SC_CAV_QNCH_RESET_HEARTBEAT"] = ChannelInteger(value=0)
         self["PHYS:SYS0:1:SC_CAV_FAULT_HEARTBEAT"] = ChannelInteger(value=0)
 
@@ -1067,12 +1093,13 @@ class CavityService(Service):
 
         rackA = range(1, 5)
         self.add_pvs(PPSPVGroup(prefix="PPS:SYSW:1:"))
-
         self.add_pvs(AutoSetupGlobalPVGroup(prefix="ACCL:SYS0:SC:"))
 
         for linac_idx, (linac_name, cm_list) in enumerate(LINAC_TUPLES):
             linac_prefix = f"ACCL:{linac_name}:1:"
-            self[f"{linac_prefix}AACTMEANSUM"] = ChannelFloat(value=0.0)
+            self[f"{linac_prefix}AACTMEANSUM"] = ChannelFloat(
+                value=len(LINAC_CM_DICT[linac_idx]) * 8 * 16.6
+            )
             self[f"{linac_prefix}ADES_MAX"] = ChannelFloat(value=2800.0)
             if linac_name == "L1B":
                 cm_list += L1BHL
