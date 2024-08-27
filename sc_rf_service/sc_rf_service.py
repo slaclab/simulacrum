@@ -886,9 +886,7 @@ class CavityPVGroup(PVGroup):
 
 
 class SSAPVGroup(PVGroup):
-    vacstat = pvproperty(
-        value=0, name="480VACStat", dtype=ChannelType.ENUM, enum_strings=("On", "Off")
-    )
+
     on: PvpropertyEnum = pvproperty(
         value=1, name="PowerOn", dtype=ChannelType.ENUM, enum_strings=("False", "True")
     )
