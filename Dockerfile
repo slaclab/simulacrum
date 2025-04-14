@@ -4,21 +4,28 @@ ENV DEBIAN_FRONTEND noninteractive
 RUN apt-get update && \
     apt-get -y install build-essential libssl-dev xterm man wget readline-common libreadline-dev sudo unzip \
                        autoconf automake libtool m4 gfortran libtool-bin xorg xorg-dev bc \
-                       libopenmpi-dev gfortran-multilib curl libpango1.0-dev
+                       libopenmpi-dev gfortran-multilib curl libpango1.0-dev git 
 ### BUILD CMAKE FROM SOURCE
 RUN wget https://cmake.org/files/v3.18/cmake-3.18.4.tar.gz && tar -xvzf cmake-3.18.4.tar.gz
 WORKDIR ./cmake-3.18.4
 RUN ./bootstrap && make && make install
 ### CLEAN UP CMAKE TO SAVE SPACE
 RUN cd / && rm -rf cmake-3.18.4
-### BMAD/TAO CONFIGURATION AND BUILD
-WORKDIR /tmp
+### BMAD/TAO DOWNLOAD
 SHELL ["/bin/bash", "-c"]
-RUN curl https://www.classe.cornell.edu/~cesrulib/downloads/tarballs/ | sed -n 's/.*href="\([^"]*\)\.tgz.*/\1/p' > /bmad_filename.txt
-RUN wget -nv "https://www.classe.cornell.edu/~cesrulib/downloads/tarballs/$(cat /bmad_filename.txt).tgz"
+WORKDIR /tmp
+RUN git clone --branch main https://github.com/bmad-sim/bmad-ecosystem.git
+WORKDIR /tmp/bmad-ecosystem
+# Fetch all tags and checkout the most recent tag available
+RUN git fetch --tags
+RUN export bmad_release=$(git describe --tags `git rev-list --tags --max-count=1`) && \
+    wget https://github.com/bmad-sim/bmad-ecosystem/releases/download/${bmad_release}/bmad_dist.tar.gz 
+### BMAD/TAO EXTRACTION
 WORKDIR /
-RUN tar -xvf /tmp/$(cat /bmad_filename.txt).tgz -C /
-RUN mv $(cat /bmad_filename.txt) bmad
+RUN tar -xvf /tmp/bmad-ecosystem/bmad_dist.tar.gz -C /
+RUN rm -rf /tmp/bmad-ecosystem && mv bmad_dist_* bmad
+
+### BMAD/TAO CONFIGURATION
 COPY bmad_env.bash /bmad/bmad_env.bash
 RUN ln -s /usr/bin/make /usr/bin/gmake
 RUN cd /bmad && \
@@ -29,11 +36,13 @@ RUN cd /bmad && \
     sed -i 's/ACC_ENABLE_MPI.*/ACC_ENABLE_MPI="Y"/' /bmad/util/dist_prefs && \
     sed -i 's/ACC_ENABLE_SHARED.*/ACC_ENABLE_SHARED="Y"/' /bmad/util/dist_prefs && \
     sed -i 's/ACC_ENABLE_MPI.*/ACC_ENABLE_MPI="Y"/' /bmad/util/dist_prefs && \
-    sed -i 's:CMAKE_Fortran_COMPILER\} MATCHES "ifort":CMAKE_Fortran_COMPILER\} STREQUAL "ifort":' /bmad/build_system/Master.cmake && \
+    sed -i 's:CMAKE_Fortran_COMPILER\} MATCHES "ifort":CMAKE_Fortran_COMPILER\} STREQUAL "ifort":' /bmad/util/Master.cmake && \
     sed -i '/export PACKAGE_VERSION=/a source .\/VERSION' /bmad/openmpi/acc_build_openmpi
 
+### BMAD/TAO BUILD
 WORKDIR /bmad
 RUN source ./bmad_env.bash && ./util/dist_build_production
+
 
 FROM ubuntu:18.04
 ### APT GET DEPENDENCIES FOR SIMULACRUM SERVICES
